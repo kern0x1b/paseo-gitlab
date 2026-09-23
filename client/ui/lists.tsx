@@ -14,7 +14,7 @@ import type { Styles } from "./styles";
 
 type TabId = "todos" | "issues" | "mrs" | "review" | "search";
 
-type Ui = { theme: PluginTheme; styles: Styles };
+type Ui = { theme: PluginTheme; styles: Styles; viewer: string };
 
 const TODO_ACTIONS: Record<string, string> = {
   assigned: "assigned you",
@@ -36,80 +36,40 @@ function todoAction(action: string): string {
 
 export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: ItemRef) => void; ui: Ui }) {
   const { styles, theme } = ui;
-  const mergeStatus = item.kind === "mr" ? mergeStatusLabel(item.mergeStatus) : null;
-  // Only worth saying when it is not the obvious one: yours as author, but assigned to someone else.
-  const authorOnly = item.roles.length > 0 && !item.roles.includes("assignee");
+  const mergeStatus =
+    item.kind === "mr" && item.mergeStatus !== "DRAFT_STATUS" ? mergeStatusLabel(item.mergeStatus) : null;
+  // "by you" says nothing in lists that are yours; name the author only when it is someone else.
+  const author = item.author && item.author.username !== ui.viewer ? item.author.name : null;
+  // The people you would want to reach: who reviews an MR, who works on an issue.
+  const people = item.kind === "mr" ? item.reviewers : item.assignees;
+  const meta = [shortReference(item.reference), author ? `by ${author}` : null, timeAgo(item.updatedAt), mergeStatus].filter(
+    Boolean,
+  );
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.reference} ${item.title}`}
       onPress={() => onOpen({ kind: item.kind, projectPath: item.projectPath, iid: item.iid })}
-      style={({ pressed }) => [styles.listRow, pressed ? styles.listRowPressed : null]}
+      style={({ pressed }) => [styles.listRow, { flexDirection: "row", gap: 10 }, pressed ? styles.listRowPressed : null]}
     >
-      <View style={styles.row}>
+      <View style={{ width: 8, paddingTop: 6, alignItems: "center" }}>
         <PipelineDot status={item.pipelineStatus} theme={theme} styles={styles} />
-        <Text style={styles.muted} numberOfLines={1}>
-          {shortReference(item.reference)}
-        </Text>
-        {item.draft ? <Badge label="Draft" styles={styles} /> : null}
-        {item.confidential ? (
-          <Badge label="Confidential" styles={styles} color={theme.colors.statusWarning} />
-        ) : null}
-        {authorOnly ? <Badge label="Not assigned to you" styles={styles} /> : null}
-        <View style={styles.spacer} />
-        <Text style={styles.small}>
-          {item.userNotesCount > 0 ? `💬 ${item.userNotesCount} · ` : ""}
-          {timeAgo(item.updatedAt)}
-        </Text>
       </View>
-      <Text style={styles.listTitle} numberOfLines={2}>
-        {item.title}
-      </Text>
-      {mergeStatus && item.mergeStatus !== "DRAFT_STATUS" ? (
-        <Text style={styles.small}>{mergeStatus}</Text>
-      ) : null}
-      <PeopleLine item={item} styles={styles} />
-      <Labels labels={item.labels} styles={styles} />
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={[styles.listTitle, { fontWeight: "500" }]} numberOfLines={2}>
+          {item.title}
+        </Text>
+        <Text style={styles.small} numberOfLines={1}>
+          {meta.join(" · ")}
+        </Text>
+        {item.confidential ? <Badge label="Confidential" styles={styles} color={theme.colors.statusWarning} /> : null}
+        <Labels labels={item.labels} styles={styles} />
+      </View>
+      <View style={{ alignItems: "flex-end", gap: 4, minWidth: 28 }}>
+        {people.length > 0 ? <AvatarStack people={people} styles={styles} max={3} /> : null}
+        {item.userNotesCount > 0 ? <Text style={styles.small}>💬 {item.userNotesCount}</Text> : null}
+      </View>
     </Pressable>
-  );
-}
-
-/** Who wrote it, who has it, and for an MR who reviews it. */
-function PeopleLine({ item, styles }: { item: ListItem; styles: Styles }) {
-  if (!item.author && item.assignees.length === 0 && item.reviewers.length === 0) {
-    return null;
-  }
-  return (
-    <View style={[styles.row, { flexWrap: "wrap", gap: 10 }]}>
-      {item.author ? (
-        <View style={[styles.row, { gap: 4 }]}>
-          <Text style={styles.small}>by</Text>
-          <AvatarStack people={[item.author]} styles={styles} />
-          <Text style={styles.small} numberOfLines={1}>
-            {item.author.name}
-          </Text>
-        </View>
-      ) : null}
-      {item.assignees.length > 0 ? (
-        <View style={[styles.row, { gap: 4 }]}>
-          <Text style={styles.small}>→</Text>
-          <AvatarStack people={item.assignees} styles={styles} />
-          {item.assignees.length === 1 ? (
-            <Text style={styles.small} numberOfLines={1}>
-              {item.assignees[0]!.name}
-            </Text>
-          ) : null}
-        </View>
-      ) : (
-        <Text style={styles.small}>→ unassigned</Text>
-      )}
-      {item.kind === "mr" && item.reviewers.length > 0 ? (
-        <View style={[styles.row, { gap: 4 }]}>
-          <Text style={styles.small}>review</Text>
-          <AvatarStack people={item.reviewers} styles={styles} />
-        </View>
-      ) : null}
-    </View>
   );
 }
 

@@ -17,7 +17,7 @@ import { Button, errorText } from "./common";
 import { ItemRow } from "./lists";
 import type { Styles } from "./styles";
 
-type Ui = { theme: PluginTheme; styles: Styles };
+type Ui = { theme: PluginTheme; styles: Styles; viewer: string };
 
 const SAVED_KEY = ["gitlab", "saved-queries"] as const;
 const STATES: { id: SearchQuery["state"]; label: string }[] = [

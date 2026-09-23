@@ -188,7 +188,11 @@ export function GitLabPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
           onCreateMergeRequest={(target) => push({ kind: "create", target: { mode: "mr", ...target } })}
           ui={{ theme, styles, host: status.data.host, workspaceId }}
         />
-        <ItemLists lists={lists.data} onOpen={(ref) => push({ kind: "item", ref })} ui={{ theme, styles }} />
+        <ItemLists
+          lists={lists.data}
+          onOpen={(ref) => push({ kind: "item", ref })}
+          ui={{ theme, styles, viewer: status.data.user.username }}
+        />
       </View>
     );
   }
