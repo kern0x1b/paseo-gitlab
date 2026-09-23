@@ -1,0 +1,6 @@
+{
+  "id": "gitlab",
+  "requirements": {
+    "paseo": ">=0.9.1"
+  }
+}
