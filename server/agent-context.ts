@@ -74,7 +74,9 @@ export function itemContext(detail: Detail, failedJobs: FailedJobLog[], withDesc
     parts.push(`\nUnresolved threads:\n${open.map(threadText).join("\n")}`);
   }
   for (const job of failedJobs) {
-    parts.push(`\nFailed job "${job.name}" (stage ${job.stage}), last lines of its log:\n\`\`\`\n${logTail(job.log)}\n\`\`\``);
+    parts.push(
+      `\nFailed job "${job.name}" (stage ${job.stage}), last lines of its log:\n\`\`\`\n${logTail(job.log)}\n\`\`\``,
+    );
   }
   return parts.join("\n");
 }

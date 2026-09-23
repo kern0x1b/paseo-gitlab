@@ -1,23 +1,25 @@
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { Modal, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { addCodeCommentRpc, addDraftRpc, submitReviewRpc, type Detail } from "../../shared/contract";
 import { removePendingComments, type PendingComment } from "../review-store";
+import { markReviewed } from "../viewed-store";
 import { rangeLabel, reviewMessage } from "./code-comment";
 import { Button, errorText } from "./common";
 import type { Ui } from "./detail";
 import { detailKey } from "./queries";
 import { draftsKey } from "./review";
+import { preferredAgent, rememberAgent, useWorkspaceAgents } from "./workspace-agents";
 
-interface AgentOption {
-  id: string;
-  title: string;
-  status: string;
-}
-
-function Choice({ selected, title, description, onPress, ui }: {
+function Choice({
+  selected,
+  title,
+  description,
+  onPress,
+  ui,
+}: {
   selected: boolean;
   title: string;
   description: string;
@@ -56,8 +58,19 @@ function Choice({ selected, title, description, onPress, ui }: {
  * with every file, line and code excerpt, or to GitLab as your review, published
  * together so the author gets one notification.
  */
-export function SubmitReview({ open, onClose, detail, comments, reviewId, workspaceId, ui }: {
+export function SubmitReview({
+  open,
+  onClose,
+  detail,
+  comments,
+  reviewId,
+  workspaceId,
+  ownsBranch,
+  ui,
+}: {
   open: boolean;
+  /** This workspace is a checkout of the MR's source branch: its agent is the one to fix things. */
+  ownsBranch: boolean;
   onClose: () => void;
   detail: Detail;
   comments: PendingComment[];
@@ -72,25 +85,16 @@ export function SubmitReview({ open, onClose, detail, comments, reviewId, worksp
   const addCodeComment = useRpc(addCodeCommentRpc);
   const addDraft = useRpc(addDraftRpc);
   const submitReview = useRpc(submitReviewRpc);
-  const [target, setTarget] = useState<"agent" | "gitlab">("agent");
+  const [chosenTarget, setTarget] = useState<"agent" | "gitlab" | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [approve, setApprove] = useState(false);
   const [summary, setSummary] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const agents = useQuery({
-    queryKey: ["gitlab", "review-agents", workspaceId],
-    enabled: open,
-    queryFn: async (): Promise<AgentOption[]> => {
-      const result = await paseo.agents.list({ scope: "active", page: { limit: 200 } });
-      return result.entries
-        .map(({ agent }) => agent)
-        .filter((agent) => agent.workspaceId === workspaceId && !agent.archivedAt)
-        .sort((a, b) => (b.lastUserMessageAt ?? b.updatedAt).localeCompare(a.lastUserMessageAt ?? a.updatedAt))
-        .map((agent) => ({ id: agent.id, title: agent.title ?? "Untitled agent", status: agent.status }));
-    },
-  });
-  const chosenAgent = agentId ?? agents.data?.[0]?.id ?? null;
+  const agents = useWorkspaceAgents(workspaceId, open);
+  // Someone else's MR is reviewed on GitLab; your own goes back to the agent working on it.
+  const target = chosenTarget ?? (ownsBranch && agents.data?.length !== 0 ? "agent" : "gitlab");
+  const chosenAgent = agentId ?? preferredAgent(workspaceId, agents.data)?.id ?? null;
 
   const submit = async () => {
     setSubmitting(true);
@@ -100,24 +104,35 @@ export function SubmitReview({ open, onClose, detail, comments, reviewId, worksp
           throw new Error("There is no agent in this workspace to send the review to.");
         }
         await paseo.agents.ref(chosenAgent).send(reviewMessage(detail, comments, summary));
+        rememberAgent(workspaceId, chosenAgent);
         removePendingComments(reviewId);
-        toast.show(`Review sent to ${agents.data?.find((agent) => agent.id === chosenAgent)?.title ?? "the agent"}`, {
-          variant: "success",
-        });
+        toast.show(
+          `Review sent to ${agents.data?.find((agent) => agent.id === chosenAgent)?.title ?? "the agent"}`,
+          {
+            variant: "success",
+          },
+        );
       } else {
-        if (!detail.diffRefs) {
-          throw new Error("GitLab did not report the commits this MR compares.");
-        }
         const ref = { projectPath: detail.projectPath, iid: detail.iid };
         // One draft per comment, then one publish: GitLab sends a single notification for the lot.
         for (const comment of comments) {
           const first = comment.lines[0]!;
           const last = comment.lines[comment.lines.length - 1]!;
-          const pick = ({ kind, oldLine, newLine, oldPos, newPos }: typeof first) => ({ kind, oldLine, newLine, oldPos, newPos });
+          const diffRefs = comment.refs ?? detail.diffRefs;
+          if (!diffRefs) {
+            throw new Error("GitLab did not report the commits this MR compares.");
+          }
+          const pick = ({ kind, oldLine, newLine, oldPos, newPos }: typeof first) => ({
+            kind,
+            oldLine,
+            newLine,
+            oldPos,
+            newPos,
+          });
           await addCodeComment({
             ...ref,
             body: comment.body,
-            diffRefs: detail.diffRefs,
+            diffRefs,
             oldPath: comment.oldPath,
             newPath: comment.newPath,
             start: pick(first),
@@ -135,6 +150,7 @@ export function SubmitReview({ open, onClose, detail, comments, reviewId, worksp
         await queryClient.invalidateQueries({ queryKey: draftsKey(detail.projectPath, detail.iid) });
         toast.show(approve ? "Review published and approved" : "Review published", { variant: "success" });
       }
+      markReviewed(reviewId);
       setSummary("");
       onClose();
     } catch (error) {
@@ -159,7 +175,9 @@ export function SubmitReview({ open, onClose, detail, comments, reviewId, worksp
           <View style={{ paddingLeft: 26, gap: 2 }}>
             {agents.isPending ? <Text style={styles.small}>Loading agents…</Text> : null}
             {agents.data?.length === 0 ? (
-              <Text style={styles.small}>No agent in this workspace yet. Start one, or publish to GitLab.</Text>
+              <Text style={styles.small}>
+                No agent in this workspace yet. Start one, or publish to GitLab.
+              </Text>
             ) : null}
             {agents.data?.map((agent) => (
               <Choice

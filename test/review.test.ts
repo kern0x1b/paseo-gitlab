@@ -18,7 +18,9 @@ function restRecorder() {
       path: url.replace(`${HOST}/api/v4`, ""),
       body: init?.body ? JSON.parse(init.body) : undefined,
     });
-    return new Response(init?.method === "DELETE" ? "" : "{}", { status: init?.method === "DELETE" ? 204 : 200 });
+    return new Response(init?.method === "DELETE" ? "" : "{}", {
+      status: init?.method === "DELETE" ? 204 : 200,
+    });
   }) as unknown as typeof fetch;
   const handlers = createHandlers({
     secrets: { read: async () => "token", write: async () => {}, remove: async () => {} },
@@ -50,7 +52,13 @@ describe("review over REST", () => {
     await handlers.addDraft({
       ...MR,
       body: "rename",
-      code: { diffRefs: { baseSha: "b", headSha: "h", startSha: "s" }, oldPath: "a", newPath: "a", oldLine: 4, newLine: 4 },
+      code: {
+        diffRefs: { baseSha: "b", headSha: "h", startSha: "s" },
+        oldPath: "a",
+        newPath: "a",
+        oldLine: 4,
+        newLine: 4,
+      },
     });
     await handlers.addDraft({ ...MR, body: "agreed", discussionId: "gid://gitlab/Discussion/abc123" });
     assert.deepEqual(calls[0]?.body, {
@@ -76,7 +84,11 @@ describe("review over REST", () => {
     await handlers.submitReview({ ...MR, approve: false });
     assert.deepEqual(
       calls.map((call) => `${call.method} ${call.path}`),
-      [`POST ${BASE}/draft_notes/bulk_publish`, `POST ${BASE}/approve`, `POST ${BASE}/draft_notes/bulk_publish`],
+      [
+        `POST ${BASE}/draft_notes/bulk_publish`,
+        `POST ${BASE}/approve`,
+        `POST ${BASE}/draft_notes/bulk_publish`,
+      ],
     );
   });
 

@@ -27,7 +27,12 @@ const STATES: { id: SearchQuery["state"]; label: string }[] = [
   { id: "all", label: "All" },
 ];
 
-function Segmented<T extends string>({ options, value, onChange, ui }: {
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  ui,
+}: {
   options: { id: T; label: string }[];
   value: T;
   onChange: (value: T) => void;
@@ -44,7 +49,9 @@ function Segmented<T extends string>({ options, value, onChange, ui }: {
           onPress={() => onChange(option.id)}
           style={[styles.tab, option.id === value ? styles.tabActive : null]}
         >
-          <Text style={[styles.tabLabel, option.id === value ? styles.tabLabelActive : null]}>{option.label}</Text>
+          <Text style={[styles.tabLabel, option.id === value ? styles.tabLabelActive : null]}>
+            {option.label}
+          </Text>
         </Pressable>
       ))}
     </View>
@@ -56,7 +63,11 @@ function Segmented<T extends string>({ options, value, onChange, ui }: {
  * and keep the searches you repeat as saved queries, like the custom queries of
  * GitLab's editor extensions.
  */
-export function SearchPanel({ defaultProject, onOpen, ui }: {
+export function SearchPanel({
+  defaultProject,
+  onOpen,
+  ui,
+}: {
   defaultProject: string;
   onOpen: (ref: ItemRef) => void;
   ui: Ui;
@@ -80,7 +91,8 @@ export function SearchPanel({ defaultProject, onOpen, ui }: {
   });
   const [submitted, setSubmitted] = useState<SearchQuery | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
-  const set = <K extends keyof SearchQuery>(key: K, value: SearchQuery[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const set = <K extends keyof SearchQuery>(key: K, value: SearchQuery[K]) =>
+    setForm((current) => ({ ...current, [key]: value }));
 
   const saved = useQuery({ queryKey: SAVED_KEY, queryFn: () => readSaved({}) });
   const results = useQuery({
@@ -131,7 +143,11 @@ export function SearchPanel({ defaultProject, onOpen, ui }: {
               >
                 <Text style={styles.badgeLabel}>{query.name}</Text>
               </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${query.name}`} onPress={() => remove.mutate(query.id)}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${query.name}`}
+                onPress={() => remove.mutate(query.id)}
+              >
                 <Text style={styles.badgeLabel}>✕</Text>
               </Pressable>
             </View>

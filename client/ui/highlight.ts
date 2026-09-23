@@ -23,11 +23,14 @@ interface Language {
 
 const words = (list: string) => new Set(list.split(/\s+/).filter(Boolean));
 
-const C_LIKE = "if else for while do switch case default break continue return new try catch finally throw throws class interface enum extends implements import package public private protected static final abstract void this super null true false instanceof var const let function async await yield typeof in of export from as";
+const C_LIKE =
+  "if else for while do switch case default break continue return new try catch finally throw throws class interface enum extends implements import package public private protected static final abstract void this super null true false instanceof var const let function async await yield typeof in of export from as";
 
 const LANGUAGES: Record<string, Language> = {
   java: {
-    keywords: words(`${C_LIKE} boolean int long short byte char float double synchronized volatile transient native strictfp assert record sealed permits non-sealed`),
+    keywords: words(
+      `${C_LIKE} boolean int long short byte char float double synchronized volatile transient native strictfp assert record sealed permits non-sealed`,
+    ),
     lineComment: ["//"],
     block: ["/*", "*/"],
     quotes: ['"', "'"],
@@ -35,7 +38,9 @@ const LANGUAGES: Record<string, Language> = {
     types: true,
   },
   kotlin: {
-    keywords: words(`${C_LIKE} fun val when object companion data sealed override open internal lateinit suspend inline reified is by init`),
+    keywords: words(
+      `${C_LIKE} fun val when object companion data sealed override open internal lateinit suspend inline reified is by init`,
+    ),
     lineComment: ["//"],
     block: ["/*", "*/"],
     quotes: ['"', "'"],
@@ -43,7 +48,9 @@ const LANGUAGES: Record<string, Language> = {
     types: true,
   },
   ts: {
-    keywords: words(`${C_LIKE} type readonly declare namespace keyof infer never unknown any boolean number string undefined satisfies`),
+    keywords: words(
+      `${C_LIKE} type readonly declare namespace keyof infer never unknown any boolean number string undefined satisfies`,
+    ),
     lineComment: ["//"],
     block: ["/*", "*/"],
     quotes: ['"', "'", "`"],
@@ -51,7 +58,9 @@ const LANGUAGES: Record<string, Language> = {
     types: true,
   },
   go: {
-    keywords: words("break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var nil true false"),
+    keywords: words(
+      "break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var nil true false",
+    ),
     lineComment: ["//"],
     block: ["/*", "*/"],
     quotes: ['"', "'", "`"],
@@ -59,7 +68,9 @@ const LANGUAGES: Record<string, Language> = {
     types: true,
   },
   python: {
-    keywords: words("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield None True False self"),
+    keywords: words(
+      "and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield None True False self",
+    ),
     lineComment: ["#"],
     block: null,
     quotes: ['"', "'"],
@@ -67,7 +78,9 @@ const LANGUAGES: Record<string, Language> = {
     types: true,
   },
   shell: {
-    keywords: words("if then else elif fi for while do done case esac in function return local export set unset echo exit"),
+    keywords: words(
+      "if then else elif fi for while do done case esac in function return local export set unset echo exit",
+    ),
     lineComment: ["#"],
     block: null,
     quotes: ['"', "'"],
@@ -75,7 +88,9 @@ const LANGUAGES: Record<string, Language> = {
     types: false,
   },
   sql: {
-    keywords: words("select from where and or not insert into values update set delete create table alter drop index on join left right inner outer group by order having limit offset as distinct null is in exists case when then else end primary key foreign references default unique constraint begin commit"),
+    keywords: words(
+      "select from where and or not insert into values update set delete create table alter drop index on join left right inner outer group by order having limit offset as distinct null is in exists case when then else end primary key foreign references default unique constraint begin commit",
+    ),
     lineComment: ["--"],
     block: ["/*", "*/"],
     quotes: ["'", '"'],
@@ -90,8 +105,22 @@ const LANGUAGES: Record<string, Language> = {
     annotations: false,
     types: false,
   },
-  json: { keywords: words("true false null"), lineComment: [], block: null, quotes: ['"'], annotations: false, types: false },
-  xml: { keywords: words(""), lineComment: [], block: ["<!--", "-->"], quotes: ['"', "'"], annotations: false, types: false },
+  json: {
+    keywords: words("true false null"),
+    lineComment: [],
+    block: null,
+    quotes: ['"'],
+    annotations: false,
+    types: false,
+  },
+  xml: {
+    keywords: words(""),
+    lineComment: [],
+    block: ["<!--", "-->"],
+    quotes: ['"', "'"],
+    annotations: false,
+    types: false,
+  },
   starlark: {
     keywords: words("load def return if else elif for in and or not True False None pass"),
     lineComment: ["#"],
@@ -157,7 +186,11 @@ function push(tokens: Token[], text: string, kind: TokenKind): void {
   }
 }
 
-export function highlightLine(text: string, language: string | null, state: HighlightState = { inBlock: false }): {
+export function highlightLine(
+  text: string,
+  language: string | null,
+  state: HighlightState = { inBlock: false },
+): {
   tokens: Token[];
   state: HighlightState;
 } {
@@ -216,7 +249,11 @@ export function highlightLine(text: string, language: string | null, state: High
     if (word) {
       const value = word[0];
       const keyword = language === "sql" ? spec.keywords.has(value.toLowerCase()) : spec.keywords.has(value);
-      push(tokens, value, keyword ? "keyword" : spec.types && /^[A-Z][a-z0-9]/.test(value) ? "type" : "plain");
+      push(
+        tokens,
+        value,
+        keyword ? "keyword" : spec.types && /^[A-Z][a-z0-9]/.test(value) ? "type" : "plain",
+      );
       index += value.length;
       continue;
     }

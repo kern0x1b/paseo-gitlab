@@ -686,6 +686,8 @@ export const versionsRpc = defineRpc({
 export const CommitSchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
+  /** The first parent: a comment on the commit's own diff is anchored between the two. */
+  parentSha: z.string().nullable(),
   title: z.string(),
   author: z.string(),
   createdAt: z.string(),

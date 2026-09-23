@@ -204,7 +204,11 @@ export function Composer({
               key={suggestion.key}
               accessibilityRole="button"
               onPress={() => setBody((current) => `${current.slice(0, start)}${suggestion.insert}`)}
-              style={({ pressed }) => [ui.styles.listRow, ui.styles.row, pressed ? ui.styles.listRowPressed : null]}
+              style={({ pressed }) => [
+                ui.styles.listRow,
+                ui.styles.row,
+                pressed ? ui.styles.listRowPressed : null,
+              ]}
             >
               <Text style={ui.styles.text}>{suggestion.label}</Text>
               <Text style={[ui.styles.small, { flex: 1 }]} numberOfLines={1}>
@@ -324,7 +328,12 @@ export function NoteView({ note, actions, ui }: { note: Note; actions: NoteActio
         <View style={[ui.styles.row, { flexWrap: "wrap" }]}>
           {note.suggestions.map((suggestion, index) =>
             suggestion.applied ? (
-              <Badge key={suggestion.id} label="Suggestion applied" styles={ui.styles} color={ui.theme.colors.statusSuccess} />
+              <Badge
+                key={suggestion.id}
+                label="Suggestion applied"
+                styles={ui.styles}
+                color={ui.theme.colors.statusSuccess}
+              />
             ) : actions.applySuggestion ? (
               <ApplySuggestion
                 key={suggestion.id}
@@ -337,7 +346,12 @@ export function NoteView({ note, actions, ui }: { note: Note; actions: NoteActio
         </View>
       ) : null}
       {!editing && !note.system ? (
-        <Reactions reactions={note.reactions} viewer={actions.viewer} onToggle={(name) => actions.react(note.id, name)} ui={ui} />
+        <Reactions
+          reactions={note.reactions}
+          viewer={actions.viewer}
+          onToggle={(name) => actions.react(note.id, name)}
+          ui={ui}
+        />
       ) : null}
     </View>
   );
@@ -785,253 +799,263 @@ export function ItemDetail({
 
   return (
     <ProjectContext.Provider value={detail.projectPath}>
-    <View style={{ gap: 12 }}>
-      <Header
-        detail={detail}
-        onBack={onBack}
-        onRefresh={() => void query.refetch()}
-        onEdit={edit && !editing ? () => setEditing(true) : undefined}
-        refreshing={query.isFetching}
-        ui={ui}
-      />
-
-      <ReviewBar detail={detail} write={write} ui={ui} />
-      <MergePanel detail={detail} write={write} ui={ui} />
-
-      {editing ? (
-        <EditForm
+      <View style={{ gap: 12 }}>
+        <Header
           detail={detail}
-          onSave={async (changes) => {
-            await write(() =>
-              updateItem({ ...itemRef, title: changes.title, description: changes.description }),
-            );
-            setEditing(false);
-          }}
-          onCancel={() => setEditing(false)}
+          onBack={onBack}
+          onRefresh={() => void query.refetch()}
+          onEdit={edit && !editing ? () => setEditing(true) : undefined}
+          refreshing={query.isFetching}
           ui={ui}
         />
-      ) : null}
 
-      <View style={ui.styles.card}>
-        <View style={ui.styles.cardBody}>
-          {detail.author ? (
-            <EditableRow label="Author" ui={ui}>
-              <View style={ui.styles.chips}>
-                <PersonChip person={detail.author} styles={ui.styles} />
-              </View>
-            </EditableRow>
-          ) : null}
-          <EditableRow label="Assignees" onEdit={edit ? () => setPicker("assignees") : undefined} ui={ui}>
-            <PeopleChips people={detail.assignees} ui={ui} />
-          </EditableRow>
-          {isMr ? (
-            <EditableRow label="Reviewers" onEdit={edit ? () => setPicker("reviewers") : undefined} ui={ui}>
-              <PeopleChips people={detail.reviewers} ui={ui} />
-            </EditableRow>
-          ) : null}
-          <EditableRow label="Labels" onEdit={edit ? () => setPicker("labels") : undefined} ui={ui}>
-            {detail.labels.length > 0 ? (
-              <Labels labels={detail.labels} styles={ui.styles} />
-            ) : (
-              <Text style={ui.styles.metaValue}>None</Text>
-            )}
-          </EditableRow>
-          <EditableRow label="Milestone" value={detail.milestone} ui={ui} />
-          <EditableRow label="Branches" value={branches} ui={ui} />
-          {isMr ? (
-            <EditableRow label="Status" value={mergeStatusLabel(detail.mergeStatus) ?? "—"} ui={ui} />
-          ) : null}
-          {detail.pipelineIid ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Open pipeline ${detail.pipelineIid}`}
-              onPress={() => onOpenPipeline({ projectPath: detail.projectPath, iid: detail.pipelineIid! })}
-              style={({ pressed }) => [ui.styles.metaRow, pressed ? ui.styles.listRowPressed : null]}
-            >
-              <Text style={ui.styles.metaLabel}>Pipeline</Text>
-              <View style={[ui.styles.row, { flex: 1 }]}>
-                <PipelineDot status={detail.pipelineStatus} theme={ui.theme} styles={ui.styles} />
-                <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
-                  #{detail.pipelineIid}{" "}
-                  {detail.pipelineStatus ? humanize(detail.pipelineStatus).toLowerCase() : ""} ›
-                </Text>
-              </View>
-            </Pressable>
-          ) : null}
-          {isMr && detail.state === "opened" && detail.sourceBranch && detail.canComment ? (
-            <View style={ui.styles.row}>
-              <View style={ui.styles.spacer} />
-              <ConfirmButton
-                label="Run pipeline"
-                title="Run a new pipeline?"
-                message={`GitLab starts a new merge request pipeline for ${detail.sourceBranch}. It uses runner time like any other run.`}
-                confirmLabel="Run pipeline"
-                busy={startingPipeline}
-                onConfirm={() => {
-                  setStartingPipeline(true);
-                  void runPipeline({ projectPath: detail.projectPath, ref: detail.sourceBranch!, mergeRequestIid: detail.iid })
-                    .then((pipeline) => onOpenPipeline(pipeline))
-                    .catch((error: unknown) => toast.error(errorText(error)))
-                    .finally(() => setStartingPipeline(false));
-                }}
-                styles={ui.styles}
-                theme={ui.theme}
-              />
-            </View>
-          ) : null}
-          {isMr ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open the changes"
-              onPress={() => onOpenChanges()}
-              style={({ pressed }) => [ui.styles.metaRow, pressed ? ui.styles.listRowPressed : null]}
-            >
-              <Text style={ui.styles.metaLabel}>Changes</Text>
-              <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
-                Files and code comments ›
-              </Text>
-              <Button
-                label="Open diff"
-                onPress={() => openDiff(ui.workspaceId, itemRef)}
-                styles={ui.styles}
-                theme={ui.theme}
-              />
-            </Pressable>
-          ) : null}
-          {edit && (stateAction || isMr) ? (
-            <View style={[ui.styles.row, { flexWrap: "wrap", marginTop: 4 }]}>
-              {isMr && detail.state === "opened" ? (
-                <Button
-                  label={detail.draft ? "Mark as ready" : "Mark as draft"}
-                  busy={changingState === "draft"}
-                  onPress={() => changeState("draft", { draft: !detail.draft })}
-                  styles={ui.styles}
-                  theme={ui.theme}
-                />
-              ) : null}
-              {stateAction ? (
-                <ConfirmButton
-                  label={stateAction === "close" ? (isMr ? "Close merge request" : "Close issue") : "Reopen"}
-                  title={stateAction === "close" ? `Close ${detail.reference}?` : `Reopen ${detail.reference}?`}
-                  message={
-                    stateAction === "close"
-                      ? `"${detail.title}" is closed. It can be reopened later.`
-                      : `"${detail.title}" is opened again.`
-                  }
-                  confirmLabel={stateAction === "close" ? "Close" : "Reopen"}
-                  busy={changingState === "state"}
-                  onConfirm={() => changeState("state", { state: stateAction })}
-                  styles={ui.styles}
-                  theme={ui.theme}
-                />
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-      </View>
+        <ReviewBar detail={detail} write={write} ui={ui} />
+        <MergePanel detail={detail} write={write} ui={ui} />
 
-      {!editing ? (
-        <View style={ui.styles.card}>
-          <View style={ui.styles.cardBody}>
-            {detail.descriptionHtml.trim() ? (
-              <HtmlBody html={detail.descriptionHtml} host={ui.host} theme={ui.theme} />
-            ) : (
-              <Text style={ui.styles.muted}>No description.</Text>
-            )}
-            {isMr ? (
-              <Reactions
-                reactions={detail.reactions}
-                viewer={detail.viewer}
-                onToggle={(name) => actions.react(detail.id, name)}
-                ui={ui}
-              />
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-
-      <View style={ui.styles.row}>
-        <Text style={ui.styles.sectionTitle}>Activity</Text>
-        <View style={ui.styles.spacer} />
-        {systemCount > 0 ? (
-          <Link
-            label={`${showSystem ? "Hide" : "Show"} ${systemCount} system ${systemCount === 1 ? "note" : "notes"}`}
-            onPress={() => setShowSystem((value) => !value)}
+        {editing ? (
+          <EditForm
+            detail={detail}
+            onSave={async (changes) => {
+              await write(() =>
+                updateItem({ ...itemRef, title: changes.title, description: changes.description }),
+              );
+              setEditing(false);
+            }}
+            onCancel={() => setEditing(false)}
             ui={ui}
           />
         ) : null}
-      </View>
 
-      {visible.map((discussion) =>
-        discussion.notes[0]?.system ? (
-          <Text key={discussion.id} style={ui.styles.systemNote}>
-            @{discussion.notes[0].author?.username ?? "ghost"} {htmlToText(discussion.notes[0].bodyHtml)} ·{" "}
-            {timeAgo(discussion.notes[0].createdAt)}
-          </Text>
-        ) : (
-          <Thread
-            key={discussion.id}
-            discussion={discussion}
-            actions={actions}
-            onOpenCode={isMr ? (path) => onOpenChanges(path) : undefined}
-            ui={ui}
-          />
-        ),
-      )}
-
-      {detail.canComment ? (
         <View style={ui.styles.card}>
           <View style={ui.styles.cardBody}>
-            <Composer
-              placeholder="Write a comment…"
-              sendLabel="Comment"
-              onSend={(body) => write(() => addNote({ noteableId: detail.id, body, mode: "comment" }))}
-              others={[
-                {
-                  label: "Start thread",
-                  onSend: (body) => write(() => addNote({ noteableId: detail.id, body, mode: "thread" })),
-                },
-                ...(isMr
-                  ? [
-                      {
-                        label: "Add to review",
-                        onSend: (body: string) =>
-                          write(async () => {
-                            await addDraft({ projectPath: detail.projectPath, iid: detail.iid, body });
-                            await queryClient.invalidateQueries({ queryKey: draftsKey(detail.projectPath, detail.iid) });
-                          }),
-                      },
-                    ]
-                  : []),
-              ]}
-              ui={ui}
-            />
+            {detail.author ? (
+              <EditableRow label="Author" ui={ui}>
+                <View style={ui.styles.chips}>
+                  <PersonChip person={detail.author} styles={ui.styles} />
+                </View>
+              </EditableRow>
+            ) : null}
+            <EditableRow label="Assignees" onEdit={edit ? () => setPicker("assignees") : undefined} ui={ui}>
+              <PeopleChips people={detail.assignees} ui={ui} />
+            </EditableRow>
+            {isMr ? (
+              <EditableRow label="Reviewers" onEdit={edit ? () => setPicker("reviewers") : undefined} ui={ui}>
+                <PeopleChips people={detail.reviewers} ui={ui} />
+              </EditableRow>
+            ) : null}
+            <EditableRow label="Labels" onEdit={edit ? () => setPicker("labels") : undefined} ui={ui}>
+              {detail.labels.length > 0 ? (
+                <Labels labels={detail.labels} styles={ui.styles} />
+              ) : (
+                <Text style={ui.styles.metaValue}>None</Text>
+              )}
+            </EditableRow>
+            <EditableRow label="Milestone" value={detail.milestone} ui={ui} />
+            <EditableRow label="Branches" value={branches} ui={ui} />
+            {isMr ? (
+              <EditableRow label="Status" value={mergeStatusLabel(detail.mergeStatus) ?? "—"} ui={ui} />
+            ) : null}
+            {detail.pipelineIid ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open pipeline ${detail.pipelineIid}`}
+                onPress={() => onOpenPipeline({ projectPath: detail.projectPath, iid: detail.pipelineIid! })}
+                style={({ pressed }) => [ui.styles.metaRow, pressed ? ui.styles.listRowPressed : null]}
+              >
+                <Text style={ui.styles.metaLabel}>Pipeline</Text>
+                <View style={[ui.styles.row, { flex: 1 }]}>
+                  <PipelineDot status={detail.pipelineStatus} theme={ui.theme} styles={ui.styles} />
+                  <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
+                    #{detail.pipelineIid}{" "}
+                    {detail.pipelineStatus ? humanize(detail.pipelineStatus).toLowerCase() : ""} ›
+                  </Text>
+                </View>
+              </Pressable>
+            ) : null}
+            {isMr && detail.state === "opened" && detail.sourceBranch && detail.canComment ? (
+              <View style={ui.styles.row}>
+                <View style={ui.styles.spacer} />
+                <ConfirmButton
+                  label="Run pipeline"
+                  title="Run a new pipeline?"
+                  message={`GitLab starts a new merge request pipeline for ${detail.sourceBranch}. It uses runner time like any other run.`}
+                  confirmLabel="Run pipeline"
+                  busy={startingPipeline}
+                  onConfirm={() => {
+                    setStartingPipeline(true);
+                    void runPipeline({
+                      projectPath: detail.projectPath,
+                      ref: detail.sourceBranch!,
+                      mergeRequestIid: detail.iid,
+                    })
+                      .then((pipeline) => onOpenPipeline(pipeline))
+                      .catch((error: unknown) => toast.error(errorText(error)))
+                      .finally(() => setStartingPipeline(false));
+                  }}
+                  styles={ui.styles}
+                  theme={ui.theme}
+                />
+              </View>
+            ) : null}
+            {isMr ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open the changes"
+                onPress={() => onOpenChanges()}
+                style={({ pressed }) => [ui.styles.metaRow, pressed ? ui.styles.listRowPressed : null]}
+              >
+                <Text style={ui.styles.metaLabel}>Changes</Text>
+                <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
+                  Files and code comments ›
+                </Text>
+                <Button
+                  label="Open diff"
+                  onPress={() => openDiff(ui.workspaceId, itemRef)}
+                  styles={ui.styles}
+                  theme={ui.theme}
+                />
+              </Pressable>
+            ) : null}
+            {edit && (stateAction || isMr) ? (
+              <View style={[ui.styles.row, { flexWrap: "wrap", marginTop: 4 }]}>
+                {isMr && detail.state === "opened" ? (
+                  <Button
+                    label={detail.draft ? "Mark as ready" : "Mark as draft"}
+                    busy={changingState === "draft"}
+                    onPress={() => changeState("draft", { draft: !detail.draft })}
+                    styles={ui.styles}
+                    theme={ui.theme}
+                  />
+                ) : null}
+                {stateAction ? (
+                  <ConfirmButton
+                    label={
+                      stateAction === "close" ? (isMr ? "Close merge request" : "Close issue") : "Reopen"
+                    }
+                    title={
+                      stateAction === "close" ? `Close ${detail.reference}?` : `Reopen ${detail.reference}?`
+                    }
+                    message={
+                      stateAction === "close"
+                        ? `"${detail.title}" is closed. It can be reopened later.`
+                        : `"${detail.title}" is opened again.`
+                    }
+                    confirmLabel={stateAction === "close" ? "Close" : "Reopen"}
+                    busy={changingState === "state"}
+                    onConfirm={() => changeState("state", { state: stateAction })}
+                    styles={ui.styles}
+                    theme={ui.theme}
+                  />
+                ) : null}
+              </View>
+            ) : null}
           </View>
         </View>
-      ) : null}
 
-      <PeoplePicker
-        title={picker === "reviewers" ? "Reviewers" : "Assignees"}
-        open={picker === "assignees" || picker === "reviewers"}
-        onClose={() => setPicker(null)}
-        projectPath={detail.projectPath}
-        initial={picker === "reviewers" ? detail.reviewers : detail.assignees}
-        onSave={(usernames) =>
-          write(() =>
-            setPeople({ ...itemRef, field: picker === "reviewers" ? "reviewers" : "assignees", usernames }),
-          )
-        }
-        ui={ui}
-      />
-      <LabelPicker
-        open={picker === "labels"}
-        onClose={() => setPicker(null)}
-        projectPath={detail.projectPath}
-        initial={detail.labels}
-        onSave={(labelIds) => write(() => setLabels({ ...itemRef, labelIds }))}
-        ui={ui}
-      />
-    </View>
+        {!editing ? (
+          <View style={ui.styles.card}>
+            <View style={ui.styles.cardBody}>
+              {detail.descriptionHtml.trim() ? (
+                <HtmlBody html={detail.descriptionHtml} host={ui.host} theme={ui.theme} />
+              ) : (
+                <Text style={ui.styles.muted}>No description.</Text>
+              )}
+              {isMr ? (
+                <Reactions
+                  reactions={detail.reactions}
+                  viewer={detail.viewer}
+                  onToggle={(name) => actions.react(detail.id, name)}
+                  ui={ui}
+                />
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
+        <View style={ui.styles.row}>
+          <Text style={ui.styles.sectionTitle}>Activity</Text>
+          <View style={ui.styles.spacer} />
+          {systemCount > 0 ? (
+            <Link
+              label={`${showSystem ? "Hide" : "Show"} ${systemCount} system ${systemCount === 1 ? "note" : "notes"}`}
+              onPress={() => setShowSystem((value) => !value)}
+              ui={ui}
+            />
+          ) : null}
+        </View>
+
+        {visible.map((discussion) =>
+          discussion.notes[0]?.system ? (
+            <Text key={discussion.id} style={ui.styles.systemNote}>
+              @{discussion.notes[0].author?.username ?? "ghost"} {htmlToText(discussion.notes[0].bodyHtml)} ·{" "}
+              {timeAgo(discussion.notes[0].createdAt)}
+            </Text>
+          ) : (
+            <Thread
+              key={discussion.id}
+              discussion={discussion}
+              actions={actions}
+              onOpenCode={isMr ? (path) => onOpenChanges(path) : undefined}
+              ui={ui}
+            />
+          ),
+        )}
+
+        {detail.canComment ? (
+          <View style={ui.styles.card}>
+            <View style={ui.styles.cardBody}>
+              <Composer
+                placeholder="Write a comment…"
+                sendLabel="Comment"
+                onSend={(body) => write(() => addNote({ noteableId: detail.id, body, mode: "comment" }))}
+                others={[
+                  {
+                    label: "Start thread",
+                    onSend: (body) => write(() => addNote({ noteableId: detail.id, body, mode: "thread" })),
+                  },
+                  ...(isMr
+                    ? [
+                        {
+                          label: "Add to review",
+                          onSend: (body: string) =>
+                            write(async () => {
+                              await addDraft({ projectPath: detail.projectPath, iid: detail.iid, body });
+                              await queryClient.invalidateQueries({
+                                queryKey: draftsKey(detail.projectPath, detail.iid),
+                              });
+                            }),
+                        },
+                      ]
+                    : []),
+                ]}
+                ui={ui}
+              />
+            </View>
+          </View>
+        ) : null}
+
+        <PeoplePicker
+          title={picker === "reviewers" ? "Reviewers" : "Assignees"}
+          open={picker === "assignees" || picker === "reviewers"}
+          onClose={() => setPicker(null)}
+          projectPath={detail.projectPath}
+          initial={picker === "reviewers" ? detail.reviewers : detail.assignees}
+          onSave={(usernames) =>
+            write(() =>
+              setPeople({ ...itemRef, field: picker === "reviewers" ? "reviewers" : "assignees", usernames }),
+            )
+          }
+          ui={ui}
+        />
+        <LabelPicker
+          open={picker === "labels"}
+          onClose={() => setPicker(null)}
+          projectPath={detail.projectPath}
+          initial={detail.labels}
+          onSave={(labelIds) => write(() => setLabels({ ...itemRef, labelIds }))}
+          ui={ui}
+        />
+      </View>
     </ProjectContext.Provider>
   );
 }

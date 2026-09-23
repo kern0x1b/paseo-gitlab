@@ -26,13 +26,18 @@ export function suggestionFor(lines: DiffLine[]): string {
 }
 
 /** The message an agent gets for a comment made in the diff: where, what the code is, and what you said. */
-export function agentMessage(detail: Detail, selection: CodeSelection, comment: string): string {
+export function agentMessage(
+  detail: Detail,
+  selection: CodeSelection,
+  comment: string,
+  intro: "Review comment on" | "Question about" = "Review comment on",
+): string {
   const path = selection.file.newPath;
   const code = selection.lines
     .map((line) => `${line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " "}${line.text}`)
     .join("\n");
   return [
-    `Review comment on ${detail.reference} "${detail.title}"`,
+    `${intro} ${detail.reference} "${detail.title}"`,
     detail.webUrl,
     `File ${path}, ${rangeLabel(selection.lines)}${detail.sourceBranch ? ` (branch ${detail.sourceBranch})` : ""}:`,
     "```diff",
@@ -63,7 +68,14 @@ export function reviewMessage(detail: Detail, comments: ReviewComment[], summary
     const code = comment.lines
       .map((line) => `${line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " "}${line.text}`)
       .join("\n");
-    parts.push("", `${index + 1}. ${comment.newPath}, ${rangeLabel(comment.lines)}:`, "```diff", code, "```", comment.body);
+    parts.push(
+      "",
+      `${index + 1}. ${comment.newPath}, ${rangeLabel(comment.lines)}:`,
+      "```diff",
+      code,
+      "```",
+      comment.body,
+    );
   });
   return parts.join("\n");
 }

@@ -29,22 +29,35 @@ describe("search variables", () => {
   const base = { projectPath: "g/p", search: "", label: "", author: "", assignee: "" };
 
   it("drops empty filters, strips @, splits labels and maps merged issues to closed", () => {
-    assert.deepEqual(searchVariables({ ...base, kind: "issue", state: "merged", label: "bug, ui", author: "@me", assignee: "you" }), {
-      path: "g/p",
-      search: null,
-      state: "closed",
-      label: ["bug", "ui"],
-      author: "me",
-      assignee: ["you"],
-    });
-    assert.deepEqual(searchVariables({ ...base, kind: "mr", state: "all", search: " gaps ", assignee: "you" }), {
-      path: "g/p",
-      search: "gaps",
-      state: null,
-      label: null,
-      author: null,
-      assignee: "you",
-    });
+    assert.deepEqual(
+      searchVariables({
+        ...base,
+        kind: "issue",
+        state: "merged",
+        label: "bug, ui",
+        author: "@me",
+        assignee: "you",
+      }),
+      {
+        path: "g/p",
+        search: null,
+        state: "closed",
+        label: ["bug", "ui"],
+        author: "me",
+        assignee: ["you"],
+      },
+    );
+    assert.deepEqual(
+      searchVariables({ ...base, kind: "mr", state: "all", search: " gaps ", assignee: "you" }),
+      {
+        path: "g/p",
+        search: "gaps",
+        state: null,
+        label: null,
+        author: null,
+        assignee: "you",
+      },
+    );
   });
 
   it("looks a number up by iid and anything else by title", () => {
@@ -70,7 +83,15 @@ describe("saved queries", () => {
 
   it("saves, lists and deletes", () => {
     const handlers = handlersWith(fetch);
-    const query = { kind: "mr" as const, projectPath: "g/p", search: "", state: "opened" as const, label: "", author: "me", assignee: "" };
+    const query = {
+      kind: "mr" as const,
+      projectPath: "g/p",
+      search: "",
+      state: "opened" as const,
+      label: "",
+      author: "me",
+      assignee: "",
+    };
     const { queries } = handlers.saveQuery({ ...query, name: "Mine" });
     assert.equal(queries.length, 1);
     assert.equal(queries[0]?.name, "Mine");

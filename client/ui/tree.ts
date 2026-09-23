@@ -21,7 +21,9 @@ export function buildTree(files: DiffFile[]): TreeNode[] {
     parts.forEach((part, index) => {
       const path = parts.slice(0, index + 1).join("/");
       const isFile = index === parts.length - 1;
-      let child = node.children.find((candidate) => candidate.name === part && (candidate.file !== null) === isFile);
+      let child = node.children.find(
+        (candidate) => candidate.name === part && (candidate.file !== null) === isFile,
+      );
       if (!child) {
         child = { name: part, path, children: [], file: isFile ? file : null };
         node.children.push(child);

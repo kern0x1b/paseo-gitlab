@@ -380,7 +380,12 @@ export function JobLogView({
                 Last {query.data.lines.length} of {query.data.totalLines} lines.
               </Text>
               {!full ? (
-                <Button label="Load the full log" onPress={() => setFull(true)} styles={styles} theme={theme} />
+                <Button
+                  label="Load the full log"
+                  onPress={() => setFull(true)}
+                  styles={styles}
+                  theme={theme}
+                />
               ) : null}
             </View>
           ) : null}

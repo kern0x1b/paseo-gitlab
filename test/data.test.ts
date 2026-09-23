@@ -35,8 +35,12 @@ describe("toLists", () => {
   it("merges authored and assigned into one list with both roles, newest first", () => {
     const lists = toLists({
       currentUser: {
-        authoredMergeRequests: { nodes: [row("g/p!1", "2026-09-20T00:00:00Z"), row("g/p!2", "2026-09-22T00:00:00Z")] },
-        assignedMergeRequests: { nodes: [row("g/p!2", "2026-09-22T00:00:00Z"), row("g/p!3", "2026-09-21T00:00:00Z")] },
+        authoredMergeRequests: {
+          nodes: [row("g/p!1", "2026-09-20T00:00:00Z"), row("g/p!2", "2026-09-22T00:00:00Z")],
+        },
+        assignedMergeRequests: {
+          nodes: [row("g/p!2", "2026-09-22T00:00:00Z"), row("g/p!3", "2026-09-21T00:00:00Z")],
+        },
         reviewRequestedMergeRequests: null,
         todos: null,
       },
@@ -52,7 +56,10 @@ describe("toLists", () => {
       ],
     );
     assert.equal(lists.mergeRequests[0]?.pipelineStatus, "FAILED");
-    assert.deepEqual(lists.issues.map((item) => [item.kind, item.projectPath, item.roles]), [["issue", "g/p", ["author"]]]);
+    assert.deepEqual(
+      lists.issues.map((item) => [item.kind, item.projectPath, item.roles]),
+      [["issue", "g/p", ["author"]]],
+    );
     assert.deepEqual(lists.reviewMergeRequests, []);
   });
 
@@ -99,37 +106,41 @@ describe("toLists", () => {
 
 describe("toDetail", () => {
   it("keeps threads with their notes and defaults what an issue does not have", () => {
-    const detail = toDetail("issue", {
-      id: "gid://gitlab/Issue/1",
-      iid: "1",
-      title: "T",
-      state: "opened",
-      webUrl: `${HOST}/g/p/-/issues/1`,
-      reference: "g/p#1",
-      createdAt: "2026-09-01T00:00:00Z",
-      descriptionHtml: null,
-      author: null,
-      discussions: {
-        nodes: [
-          {
-            id: "gid://gitlab/Discussion/a",
-            resolvable: false,
-            resolved: false,
-            notes: {
-              nodes: [
-                {
-                  id: "n1",
-                  bodyHtml: "<p>hi</p>",
-                  system: false,
-                  createdAt: "2026-09-02T00:00:00Z",
-                  author: { username: "u", name: "U" },
-                },
-              ],
+    const detail = toDetail(
+      "issue",
+      {
+        id: "gid://gitlab/Issue/1",
+        iid: "1",
+        title: "T",
+        state: "opened",
+        webUrl: `${HOST}/g/p/-/issues/1`,
+        reference: "g/p#1",
+        createdAt: "2026-09-01T00:00:00Z",
+        descriptionHtml: null,
+        author: null,
+        discussions: {
+          nodes: [
+            {
+              id: "gid://gitlab/Discussion/a",
+              resolvable: false,
+              resolved: false,
+              notes: {
+                nodes: [
+                  {
+                    id: "n1",
+                    bodyHtml: "<p>hi</p>",
+                    system: false,
+                    createdAt: "2026-09-02T00:00:00Z",
+                    author: { username: "u", name: "U" },
+                  },
+                ],
+              },
             },
-          },
-        ],
+          ],
+        },
       },
-    }, "me");
+      "me",
+    );
     assert.equal(detail.descriptionHtml, "");
     assert.deepEqual(detail.reviewers, []);
     assert.equal(detail.sourceBranch, null);
@@ -173,11 +184,22 @@ describe("uploadApiPath", () => {
       (async () => new Response(body as BodyInit, init)) as unknown as typeof fetch;
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2]);
     assert.equal(
-      await fetchImage({ host: HOST, token: "t" }, src, reply(png, { headers: { "content-type": "application/octet-stream" } })),
+      await fetchImage(
+        { host: HOST, token: "t" },
+        src,
+        reply(png, { headers: { "content-type": "application/octet-stream" } }),
+      ),
       `data:image/png;base64,${Buffer.from(png).toString("base64")}`,
     );
     const svg = "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>";
-    assert.equal(await fetchImage({ host: HOST, token: "t" }, src, reply(svg, { headers: { "content-type": "image/svg+xml" } })), null);
+    assert.equal(
+      await fetchImage(
+        { host: HOST, token: "t" },
+        src,
+        reply(svg, { headers: { "content-type": "image/svg+xml" } }),
+      ),
+      null,
+    );
     assert.equal(await fetchImage({ host: HOST, token: "t" }, src, reply("{}", { status: 404 })), null);
   });
 });
@@ -264,13 +286,18 @@ describe("toPipeline", () => {
     );
     assert.equal(pipeline.webUrl, `${HOST}/g/p/-/pipelines/5`);
     assert.equal(pipeline.stages[0]?.jobs[0]?.webUrl, `${HOST}/g/p/-/jobs/11`);
-    assert.deepEqual(pipeline.stages[0]?.jobs[1]?.downstream, { projectPath: "g/child", iid: "3", status: "SUCCESS" });
+    assert.deepEqual(pipeline.stages[0]?.jobs[1]?.downstream, {
+      projectPath: "g/child",
+      iid: "3",
+      status: "SUCCESS",
+    });
     assert.equal(numericId("gid://gitlab/Ci::Build/1042565"), "1042565");
   });
 });
 
 describe("parseJobLog", () => {
-  const stamp = (text: string, continuation = false) => `2026-09-23T14:09:44.898508Z 00O${continuation ? "+" : ""} ${text}`;
+  const stamp = (text: string, continuation = false) =>
+    `2026-09-23T14:09:44.898508Z 00O${continuation ? "+" : ""} ${text}`;
 
   it("drops runner timestamps, joins continuations and turns section markers into titles", () => {
     const raw = [
@@ -309,8 +336,14 @@ describe("role filters", () => {
   it("keeps only the chosen role, and defaults to assigned unless that would be empty", async () => {
     const { byRole, defaultRoleFilter } = await import("../client/ui/filters");
     const items = [item("a", ["author"]), item("b", ["author", "assignee"]), item("c", ["assignee"])];
-    assert.deepEqual(byRole(items, "assignee").map((entry) => entry.reference), ["b", "c"]);
-    assert.deepEqual(byRole(items, "author").map((entry) => entry.reference), ["a", "b"]);
+    assert.deepEqual(
+      byRole(items, "assignee").map((entry) => entry.reference),
+      ["b", "c"],
+    );
+    assert.deepEqual(
+      byRole(items, "author").map((entry) => entry.reference),
+      ["a", "b"],
+    );
     assert.equal(byRole(items, "all").length, 3);
     assert.equal(defaultRoleFilter(items), "assignee");
     assert.equal(defaultRoleFilter([item("a", ["author"])]), "all");

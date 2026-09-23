@@ -12,7 +12,12 @@ export type CreateTarget =
   | { mode: "mr"; projectPath: string; sourceBranch: string; targetBranch: string };
 
 /** A new issue in a project, or a new MR from a branch; opens the result when GitLab has it. */
-export function CreateView({ target, onBack, onCreated, ui }: {
+export function CreateView({
+  target,
+  onBack,
+  onCreated,
+  ui,
+}: {
   target: CreateTarget;
   onBack: () => void;
   onCreated: (ref: ItemRef) => void;
@@ -68,7 +73,12 @@ export function CreateView({ target, onBack, onCreated, ui }: {
               <Text style={styles.sectionTitle}>Branches</Text>
               <View style={styles.row}>
                 <Text style={styles.text}>{target.sourceBranch} →</Text>
-                <TextInput value={targetBranch} onChangeText={setTargetBranch} editable={!saving} style={[field, { flex: 1 }]} />
+                <TextInput
+                  value={targetBranch}
+                  onChangeText={setTargetBranch}
+                  editable={!saving}
+                  style={[field, { flex: 1 }]}
+                />
               </View>
             </>
           ) : null}
@@ -97,7 +107,9 @@ export function CreateView({ target, onBack, onCreated, ui }: {
               label={target.mode === "issue" ? "Create issue" : "Create merge request"}
               primary
               busy={saving}
-              disabled={!title.trim() || !projectPath.trim() || (target.mode === "mr" && !targetBranch.trim())}
+              disabled={
+                !title.trim() || !projectPath.trim() || (target.mode === "mr" && !targetBranch.trim())
+              }
               onPress={() => void save()}
               styles={styles}
               theme={theme}

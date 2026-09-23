@@ -4,7 +4,14 @@ import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { todoDoneRpc, type ItemRef, type ListItem, type Lists, type Person, type Todo } from "../../shared/contract";
+import {
+  todoDoneRpc,
+  type ItemRef,
+  type ListItem,
+  type Lists,
+  type Person,
+  type Todo,
+} from "../../shared/contract";
 import { Avatar, Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
 import { byRole, defaultRoleFilter, ROLE_FILTERS, type RoleFilter } from "./filters";
 import { humanize, mergeStatusLabel, shortReference, timeAgo } from "./format";
@@ -75,7 +82,11 @@ export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: It
       accessibilityRole="button"
       accessibilityLabel={`${item.reference} ${item.title}`}
       onPress={() => onOpen({ kind: item.kind, projectPath: item.projectPath, iid: item.iid })}
-      style={({ pressed }) => [styles.listRow, { gap: 8, paddingVertical: 10 }, pressed ? styles.listRowPressed : null]}
+      style={({ pressed }) => [
+        styles.listRow,
+        { gap: 8, paddingVertical: 10 },
+        pressed ? styles.listRowPressed : null,
+      ]}
     >
       <View style={{ flexDirection: "row", gap: 10 }}>
         <View style={{ width: 8, paddingTop: 6, alignItems: "center" }}>
@@ -95,9 +106,17 @@ export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: It
         </View>
       </View>
       <View style={{ gap: 4, paddingLeft: 18 }}>
-        <PeopleLine label={item.assignees.length > 1 ? "Assignees" : "Assignee"} people={item.assignees} styles={styles} />
+        <PeopleLine
+          label={item.assignees.length > 1 ? "Assignees" : "Assignee"}
+          people={item.assignees}
+          styles={styles}
+        />
         {item.kind === "mr" ? (
-          <PeopleLine label={item.reviewers.length > 1 ? "Reviewers" : "Reviewer"} people={item.reviewers} styles={styles} />
+          <PeopleLine
+            label={item.reviewers.length > 1 ? "Reviewers" : "Reviewer"}
+            people={item.reviewers}
+            styles={styles}
+          />
         ) : (
           <PeopleLine label="Author" people={item.author ? [item.author] : []} styles={styles} />
         )}
@@ -233,11 +252,15 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
     mrs: defaultRoleFilter(lists.mergeRequests),
   }));
   const filterable = tab === "issues" || tab === "mrs" ? tab : null;
-  const unfiltered = tab === "issues" ? lists.issues : tab === "mrs" ? lists.mergeRequests : lists.reviewMergeRequests;
+  const unfiltered =
+    tab === "issues" ? lists.issues : tab === "mrs" ? lists.mergeRequests : lists.reviewMergeRequests;
   const items = filterable ? byRole(unfiltered, roleFilter[filterable]) : unfiltered;
   const empty = tab === "todos" ? lists.todos.length === 0 : items.length === 0;
   const defaultProject =
-    lists.mergeRequests[0]?.projectPath ?? lists.issues[0]?.projectPath ?? lists.reviewMergeRequests[0]?.projectPath ?? "";
+    lists.mergeRequests[0]?.projectPath ??
+    lists.issues[0]?.projectPath ??
+    lists.reviewMergeRequests[0]?.projectPath ??
+    "";
   const emptyText = filterable
     ? (ROLE_FILTERS.find((filter) => filter.id === roleFilter[filterable])?.empty ?? current.empty)
     : current.empty;
@@ -275,7 +298,9 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
                 onPress={() => setRoleFilter((current) => ({ ...current, [filterable]: filter.id }))}
                 style={[styles.badge, active ? { backgroundColor: ui.theme.colors.accent } : null]}
               >
-                <Text style={[styles.badgeLabel, active ? { color: ui.theme.colors.accentForeground } : null]}>
+                <Text
+                  style={[styles.badgeLabel, active ? { color: ui.theme.colors.accentForeground } : null]}
+                >
                   {filter.label} {byRole(unfiltered, filter.id).length}
                 </Text>
               </Pressable>
@@ -285,22 +310,22 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
       ) : null}
       {tab === "search" ? <SearchPanel defaultProject={defaultProject} onOpen={onOpen} ui={ui} /> : null}
       {tab === "search" ? null : (
-      <View style={styles.card}>
-        {empty ? (
-          <View style={styles.cardBody}>
-            <Text style={styles.muted}>{emptyText}</Text>
-          </View>
-        ) : tab === "todos" ? (
-          <Todos todos={lists.todos} onOpen={onOpen} ui={ui} />
-        ) : (
-          items.map((item, index) => (
-            <Fragment key={`${item.kind}:${item.reference}`}>
-              {index > 0 ? <View style={styles.divider} /> : null}
-              <ItemRow item={item} onOpen={onOpen} ui={ui} />
-            </Fragment>
-          ))
-        )}
-      </View>
+        <View style={styles.card}>
+          {empty ? (
+            <View style={styles.cardBody}>
+              <Text style={styles.muted}>{emptyText}</Text>
+            </View>
+          ) : tab === "todos" ? (
+            <Todos todos={lists.todos} onOpen={onOpen} ui={ui} />
+          ) : (
+            items.map((item, index) => (
+              <Fragment key={`${item.kind}:${item.reference}`}>
+                {index > 0 ? <View style={styles.divider} /> : null}
+                <ItemRow item={item} onOpen={onOpen} ui={ui} />
+              </Fragment>
+            ))
+          )}
+        </View>
       )}
     </View>
   );

@@ -29,7 +29,12 @@ const COMMON_REACTIONS: { name: string; emoji: string }[] = [
   { name: "eyes", emoji: "👀" },
 ];
 
-export function Reactions({ reactions, viewer, onToggle, ui }: {
+export function Reactions({
+  reactions,
+  viewer,
+  onToggle,
+  ui,
+}: {
   reactions: Reaction[];
   viewer: string;
   onToggle: (name: string) => Promise<unknown>;
@@ -69,19 +74,26 @@ export function Reactions({ reactions, viewer, onToggle, ui }: {
         );
       })}
       {picking ? (
-        COMMON_REACTIONS.filter((option) => !reactions.some((reaction) => reaction.name === option.name)).map((option) => (
-          <Pressable
-            key={option.name}
-            accessibilityRole="button"
-            accessibilityLabel={`React with ${option.name}`}
-            onPress={() => toggle(option.name)}
-            style={chip(false)}
-          >
-            <Text style={styles.badgeLabel}>{option.emoji}</Text>
-          </Pressable>
-        ))
+        COMMON_REACTIONS.filter((option) => !reactions.some((reaction) => reaction.name === option.name)).map(
+          (option) => (
+            <Pressable
+              key={option.name}
+              accessibilityRole="button"
+              accessibilityLabel={`React with ${option.name}`}
+              onPress={() => toggle(option.name)}
+              style={chip(false)}
+            >
+              <Text style={styles.badgeLabel}>{option.emoji}</Text>
+            </Pressable>
+          ),
+        )
       ) : (
-        <Pressable accessibilityRole="button" accessibilityLabel="Add a reaction" onPress={() => setPicking(true)} style={chip(false)}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add a reaction"
+          onPress={() => setPicking(true)}
+          style={chip(false)}
+        >
           <Text style={styles.badgeLabel}>☺︎ +</Text>
         </Pressable>
       )}
@@ -112,11 +124,15 @@ export function MergePanel({ detail, write, ui }: { detail: Detail; write: Write
         <View style={[styles.row, { flexWrap: "wrap" }]}>
           <Text style={styles.sectionTitle}>Approvals</Text>
           {detail.approvedBy.length > 0 ? (
-            <Text style={[styles.small, { flex: 1 }]}>Approved by {detail.approvedBy.map((name) => `@${name}`).join(", ")}</Text>
+            <Text style={[styles.small, { flex: 1 }]}>
+              Approved by {detail.approvedBy.map((name) => `@${name}`).join(", ")}
+            </Text>
           ) : (
             <Text style={[styles.small, { flex: 1 }]}>Not approved yet</Text>
           )}
-          {detail.autoMergeEnabled ? <Badge label="Auto-merge on" styles={styles} color={theme.colors.statusSuccess} /> : null}
+          {detail.autoMergeEnabled ? (
+            <Badge label="Auto-merge on" styles={styles} color={theme.colors.statusSuccess} />
+          ) : null}
         </View>
         <View style={[styles.row, { flexWrap: "wrap" }]}>
           {detail.canApprove || approvedByMe ? (

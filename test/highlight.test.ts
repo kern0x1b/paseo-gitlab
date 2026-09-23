@@ -8,7 +8,9 @@ import { describe, it } from "node:test";
 import { highlightLine, languageOf } from "../client/ui/highlight";
 
 const kinds = (text: string, language: string | null, inBlock = false) =>
-  highlightLine(text, language, { inBlock }).tokens.filter((token) => token.text.trim()).map((token) => [token.kind, token.text.trim()]);
+  highlightLine(text, language, { inBlock })
+    .tokens.filter((token) => token.text.trim())
+    .map((token) => [token.kind, token.text.trim()]);
 
 describe("languageOf", () => {
   it("maps extensions and Bazel file names", () => {
@@ -56,6 +58,8 @@ describe("highlightLine", () => {
   });
 
   it("leaves unknown files plain", () => {
-    assert.deepEqual(highlightLine("anything at all", null).tokens, [{ text: "anything at all", kind: "plain" }]);
+    assert.deepEqual(highlightLine("anything at all", null).tokens, [
+      { text: "anything at all", kind: "plain" },
+    ]);
   });
 });

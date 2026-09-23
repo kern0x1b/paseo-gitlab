@@ -37,7 +37,10 @@ describe("parseRemote", () => {
       await readCheckout(
         "/w",
         HOST,
-        git({ "rev-parse --abbrev-ref HEAD": "feature", "remote get-url origin": "git@gitlab.example.com:g/p.git" }),
+        git({
+          "rev-parse --abbrev-ref HEAD": "feature",
+          "remote get-url origin": "git@gitlab.example.com:g/p.git",
+        }),
       ),
       { branch: "feature", projectPath: "g/p" },
     );
@@ -53,7 +56,10 @@ describe("parseRemote", () => {
       await readCheckout(
         "/w",
         HOST,
-        git({ "rev-parse --abbrev-ref HEAD": "HEAD", "remote get-url origin": "git@gitlab.example.com:g/p.git" }),
+        git({
+          "rev-parse --abbrev-ref HEAD": "HEAD",
+          "remote get-url origin": "git@gitlab.example.com:g/p.git",
+        }),
       ),
       null,
     );
@@ -62,7 +68,10 @@ describe("parseRemote", () => {
 
 describe("parseReference", () => {
   it("resolves references and URLs, bare numbers against the default project", () => {
-    assert.deepEqual(parseReference("!12", HOST, "g/p"), { kind: "item", ref: { kind: "mr", projectPath: "g/p", iid: "12" } });
+    assert.deepEqual(parseReference("!12", HOST, "g/p"), {
+      kind: "item",
+      ref: { kind: "mr", projectPath: "g/p", iid: "12" },
+    });
     assert.deepEqual(parseReference("other/x#3", HOST, "g/p"), {
       kind: "item",
       ref: { kind: "issue", projectPath: "other/x", iid: "3" },
@@ -118,17 +127,34 @@ describe("agent context", () => {
           resolvable: true,
           resolved: false,
           notes: [
-            { body: "Rename this", author: { username: "rev" }, position: { path: "a.ts", newLine: 3, oldLine: null }, system: false },
+            {
+              body: "Rename this",
+              author: { username: "rev" },
+              position: { path: "a.ts", newLine: 3, oldLine: null },
+              system: false,
+            },
             { body: "Done?", author: { username: "me" }, position: null, system: false },
           ],
         },
-        { id: "d2", resolvable: true, resolved: true, notes: [{ body: "old", author: null, position: null, system: false }] },
+        {
+          id: "d2",
+          resolvable: true,
+          resolved: true,
+          notes: [{ body: "old", author: null, position: null, system: false }],
+        },
       ],
     }) as unknown as Detail;
 
   it("lists only unresolved threads with their file and line, and the failed job logs", () => {
     const text = agentPrompt(detail("Why"), [
-      { name: "unit", stage: "test", log: { lines: [{ section: false, segments: [{ text: "boom", color: "red", bold: false }] }], totalLines: 1 } },
+      {
+        name: "unit",
+        stage: "test",
+        log: {
+          lines: [{ section: false, segments: [{ text: "boom", color: "red", bold: false }] }],
+          totalLines: 1,
+        },
+      },
     ]);
     assert.match(text, /^Please address the 1 unresolved review thread and fix the failing job below\./);
     assert.match(text, /1\. \(a\.ts:3\) @rev: Rename this\n {3}↳ @me: Done\?/);
@@ -139,6 +165,9 @@ describe("agent context", () => {
   it("cuts a huge description and points at the full one", () => {
     const text = itemContext(detail("x".repeat(20_000)), []);
     assert.ok(text.length < 10_000);
-    assert.match(text, /truncated; the full description is at https:\/\/gitlab\.example\.com\/g\/p\/-\/merge_requests\/7/);
+    assert.match(
+      text,
+      /truncated; the full description is at https:\/\/gitlab\.example\.com\/g\/p\/-\/merge_requests\/7/,
+    );
   });
 });

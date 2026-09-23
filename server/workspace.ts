@@ -26,7 +26,10 @@ export function parseRemote(remote: string): { hostname: string; path: string } 
   }
   try {
     const url = new URL(remote);
-    const path = url.pathname.replace(/^\/+/, "").replace(/\.git\/?$/, "").replace(/\/+$/, "");
+    const path = url.pathname
+      .replace(/^\/+/, "")
+      .replace(/\.git\/?$/, "")
+      .replace(/\/+$/, "");
     return path ? { hostname: url.hostname.toLowerCase(), path } : null;
   } catch {
     return null;
@@ -39,7 +42,11 @@ export interface WorkspaceCheckout {
 }
 
 /** Null when the directory is not a checkout of a project on this GitLab, or is on a detached HEAD. */
-export async function readCheckout(directory: string, host: string, git: GitRunner = runGit): Promise<WorkspaceCheckout | null> {
+export async function readCheckout(
+  directory: string,
+  host: string,
+  git: GitRunner = runGit,
+): Promise<WorkspaceCheckout | null> {
   const [branch, remote] = await Promise.all([
     git(directory, ["rev-parse", "--abbrev-ref", "HEAD"]),
     git(directory, ["remote", "get-url", "origin"]),

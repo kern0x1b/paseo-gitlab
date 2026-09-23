@@ -29,7 +29,10 @@ export interface Suggestion {
 }
 
 /** What GitLab would offer for the token being typed, the way its own editor does. */
-export function useSuggestions(text: string, projectPath: string | null): { suggestions: Suggestion[]; start: number | null } {
+export function useSuggestions(
+  text: string,
+  projectPath: string | null,
+): { suggestions: Suggestion[]; start: number | null } {
   const searchUsers = useRpc(searchUsersRpc);
   const searchReferences = useRpc(referenceSearchRpc);
   const token = useDebounced(trailingToken(text));
@@ -105,13 +108,16 @@ export function usePasteUpload(
         .then((base64) =>
           latest.current.upload({
             projectPath,
-            filename: image.name && image.name !== "image.png" ? image.name : `pasted-${Date.now()}.${extension}`,
+            filename:
+              image.name && image.name !== "image.png" ? image.name : `pasted-${Date.now()}.${extension}`,
             contentType: image.type,
             base64,
           }),
         )
         .then((result) => latest.current.onInsert(result.markdown))
-        .catch((error: unknown) => latest.current.onError(error instanceof Error ? error.message : String(error)))
+        .catch((error: unknown) =>
+          latest.current.onError(error instanceof Error ? error.message : String(error)),
+        )
         .finally(() => setUploading(false));
     };
     element.addEventListener("paste", onPaste);

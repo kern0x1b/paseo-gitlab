@@ -1,21 +1,44 @@
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
-import { Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
+import { openExternalUrl, usePaseo, useRpc, useWorkspace } from "@getpaseo/plugin/client";
+import { Icon, Modal, ScrollView, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery } from "@tanstack/react-query";
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Platform, Pressable, ScrollView as NativeScrollView, Text, View } from "react-native";
-import { authStatusRpc, detailRpc, diffsRpc, listsRpc, type DiffFile, type ItemRef } from "../../shared/contract";
+import {
+  authStatusRpc,
+  commitsRpc,
+  detailRpc,
+  diffsRpc,
+  fileLinesRpc,
+  listsRpc,
+  scopedDiffsRpc,
+  versionsRpc,
+  workspaceRpc,
+  type DiffFile,
+  type ItemRef,
+} from "../../shared/contract";
 import { setDiffTarget, useDiffTarget } from "../diff-target";
-import { addPendingComment, editPendingComment, removePendingComments, reviewKey, usePendingComments } from "../review-store";
-import { diffsKey, FileDiff, fileKey } from "./changes";
+import {
+  addPendingComment,
+  editPendingComment,
+  removePendingComments,
+  reviewKey,
+  usePendingComments,
+} from "../review-store";
+import { setViewed, useReviewedAt, useViewed } from "../viewed-store";
+import { diffsKey, FileDiff, fileKey, type DiffView } from "./changes";
+import { agentMessage, type CodeSelection } from "./code-comment";
 import { Button, Centered, errorText, HostContext, IconButton } from "./common";
 import { ProjectContext } from "./composer-tools";
 import { useNoteActions, type Ui } from "./detail";
-import { shortReference } from "./format";
+import { contentHash, sinceLastReview } from "./diff-view";
+import { shortReference, timeAgo } from "./format";
 import { detailKey, LISTS_KEY, STATUS_KEY } from "./queries";
 import { SubmitReview } from "./submit-review";
 import { buildTree, type TreeNode } from "./tree";
 import { useStyles, type Styles } from "./styles";
+import { workspaceKey } from "./workspace-card";
+import { preferredAgent, useWorkspaceAgents } from "./workspace-agents";
 
 const TREE_WIDTH = { initial: 300, min: 180, max: 640 };
 const TREE_WIDTH_KEY = "paseo-gitlab:tree-width";
@@ -78,29 +101,48 @@ function Counts({ file, styles, ui }: { file: DiffFile; styles: Styles; ui: Ui }
   );
 }
 
+type FileFilter = "all" | "unviewed" | "commented";
+
 /** The changed files, as GitLab's file browser shows them: a folder tree or a flat list, with a filter. */
-function FileBrowser({ files, active, onSelect, pendingByFile, threadsByFile, width, ui }: {
+function FileBrowser({
+  files,
+  active,
+  onSelect,
+  pendingByFile,
+  threadsByFile,
+  viewed,
+  width,
+  ui,
+}: {
   files: DiffFile[];
   width: number;
   active: string | null;
   onSelect: (file: DiffFile) => void;
   pendingByFile: Map<string, number>;
   threadsByFile: Map<string, number>;
+  viewed: ReadonlySet<string>;
   ui: Ui;
 }) {
   const { styles, theme } = ui;
   const [asTree, setAsTree] = useState(true);
   const [filter, setFilter] = useState("");
+  const [only, setOnly] = useState<FileFilter>("all");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const shown = filter.trim()
-    ? files.filter((file) => file.newPath.toLowerCase().includes(filter.trim().toLowerCase()))
-    : files;
+  const notesOn = (file: DiffFile) =>
+    (pendingByFile.get(fileKey(file)) ?? 0) + (threadsByFile.get(fileKey(file)) ?? 0);
+  const needle = filter.trim().toLowerCase();
+  const shown = files.filter(
+    (file) =>
+      (!needle || file.newPath.toLowerCase().includes(needle)) &&
+      (only === "all" || (only === "unviewed" ? !viewed.has(fileKey(file)) : notesOn(file) > 0)),
+  );
   const tree = useMemo(() => buildTree(shown), [shown]);
 
   const fileRow = (file: DiffFile, label: string, depth: number) => {
     const key = fileKey(file);
     const selected = key === active;
-    const notes = (pendingByFile.get(key) ?? 0) + (threadsByFile.get(key) ?? 0);
+    const notes = notesOn(file);
+    const seen = viewed.has(key);
     return (
       <Pressable
         key={key}
@@ -117,14 +159,21 @@ function FileBrowser({ files, active, onSelect, pendingByFile, threadsByFile, wi
           style={[
             styles.text,
             { flex: 1, fontSize: 12 },
-            file.deletedFile ? { textDecorationLine: "line-through", color: theme.colors.foregroundMuted } : null,
+            seen ? { color: theme.colors.foregroundMuted } : null,
+            file.deletedFile
+              ? { textDecorationLine: "line-through", color: theme.colors.foregroundMuted }
+              : null,
           ]}
           numberOfLines={1}
         >
           {label}
         </Text>
         {notes > 0 ? <Text style={styles.small}>💬{notes}</Text> : null}
-        <Counts file={file} styles={styles} ui={ui} />
+        {seen ? (
+          <Icon name="Check" size={12} color={theme.colors.foregroundMuted} />
+        ) : (
+          <Counts file={file} styles={styles} ui={ui} />
+        )}
       </Pressable>
     );
   };
@@ -162,28 +211,42 @@ function FileBrowser({ files, active, onSelect, pendingByFile, threadsByFile, wi
     );
   };
 
+  const segmented = <T extends string | boolean>(
+    options: { id: T; label: string; description: string }[],
+    value: T,
+    onChange: (next: T) => void,
+  ) => (
+    <View style={styles.tabs}>
+      {options.map((option) => (
+        <Pressable
+          key={String(option.id)}
+          accessibilityRole="tab"
+          accessibilityLabel={option.description}
+          accessibilityState={{ selected: value === option.id }}
+          onPress={() => onChange(option.id)}
+          style={[styles.tab, { paddingHorizontal: 8 }, value === option.id ? styles.tabActive : null]}
+        >
+          <Text style={styles.small}>{option.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+
   return (
     <View style={{ width }}>
       <View style={{ padding: 10, gap: 8 }}>
         <View style={styles.row}>
-          <Text style={[styles.text, { fontWeight: "600", flex: 1 }]}>Files {files.length}</Text>
-          <View style={styles.tabs}>
-            {[
-              { id: false, icon: "List", label: "Show as a list" },
-              { id: true, icon: "FolderTree", label: "Show as a tree" },
-            ].map((option) => (
-              <Pressable
-                key={option.label}
-                accessibilityRole="tab"
-                accessibilityLabel={option.label}
-                accessibilityState={{ selected: asTree === option.id }}
-                onPress={() => setAsTree(option.id)}
-                style={[styles.tab, { paddingHorizontal: 8 }, asTree === option.id ? styles.tabActive : null]}
-              >
-                <Text style={styles.small}>{option.id ? "Tree" : "List"}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <Text style={[styles.text, { fontWeight: "600", flex: 1 }]}>
+            Files {shown.length === files.length ? files.length : `${shown.length}/${files.length}`}
+          </Text>
+          {segmented(
+            [
+              { id: false, label: "List", description: "Show as a list" },
+              { id: true, label: "Tree", description: "Show as a tree" },
+            ],
+            asTree,
+            setAsTree,
+          )}
         </View>
         <TextInput
           value={filter}
@@ -192,15 +255,34 @@ function FileBrowser({ files, active, onSelect, pendingByFile, threadsByFile, wi
           placeholderTextColor={theme.colors.foregroundMuted}
           style={[styles.input, { minHeight: 0, paddingVertical: 6 }]}
         />
+        {segmented<FileFilter>(
+          [
+            { id: "all", label: "All", description: "Show every file" },
+            { id: "unviewed", label: "Unviewed", description: "Show the files you have not marked viewed" },
+            {
+              id: "commented",
+              label: "Commented",
+              description: "Show the files with threads or your comments",
+            },
+          ],
+          only,
+          setOnly,
+        )}
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: 16 }}>
         {asTree ? tree.map((entry) => node(entry, 0)) : shown.map((file) => fileRow(file, file.newPath, 0))}
+        {shown.length === 0 ? <Text style={[styles.small, { padding: 8 }]}>No file matches.</Text> : null}
       </ScrollView>
     </View>
   );
 }
 
-function MergeRequestPicker({ open, onClose, onPick, ui }: {
+function MergeRequestPicker({
+  open,
+  onClose,
+  onPick,
+  ui,
+}: {
   open: boolean;
   onClose: () => void;
   onPick: (ref: ItemRef) => void;
@@ -235,10 +317,343 @@ function MergeRequestPicker({ open, onClose, onPick, ui }: {
   );
 }
 
+/** Which of the MR's changes the panel shows. */
+type Scope =
+  | { kind: "mr" }
+  | { kind: "compare"; from: string; to: string; label: string }
+  | { kind: "commit"; sha: string; parentSha: string | null; label: string };
+
+function scopeId(scope: Scope): string {
+  return scope.kind === "mr"
+    ? "mr"
+    : scope.kind === "compare"
+      ? `compare:${scope.from}..${scope.to}`
+      : `commit:${scope.sha}`;
+}
+
+/** The commits a comment on this scope's diff is anchored to, when they differ from the MR's own. */
+function scopeRefs(scope: Scope): { baseSha: string; headSha: string; startSha: string } | null {
+  if (scope.kind === "compare") {
+    return { baseSha: scope.from, startSha: scope.from, headSha: scope.to };
+  }
+  if (scope.kind === "commit" && scope.parentSha) {
+    return { baseSha: scope.parentSha, startSha: scope.parentSha, headSha: scope.sha };
+  }
+  return null;
+}
+
+function ScopeRow({
+  title,
+  description,
+  selected,
+  onPress,
+  ui,
+}: {
+  title: string;
+  description: string;
+  selected: boolean;
+  onPress: () => void;
+  ui: Ui;
+}) {
+  const { styles, theme } = ui;
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.listRow, pressed ? styles.listRowPressed : null]}
+    >
+      <View style={[styles.row, { gap: 8 }]}>
+        <Text style={[styles.text, { flex: 1, fontWeight: selected ? "600" : "400" }]} numberOfLines={1}>
+          {title}
+        </Text>
+        {selected ? <Icon name="Check" size={14} color={theme.colors.accent} /> : null}
+      </View>
+      <Text style={styles.small} numberOfLines={1}>
+        {description}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** "Compare": the whole MR, what came since your last review, one push, or one commit. */
+function ScopePicker({
+  open,
+  onClose,
+  target,
+  scope,
+  onPick,
+  since,
+  ui,
+}: {
+  open: boolean;
+  onClose: () => void;
+  target: ItemRef;
+  scope: Scope;
+  onPick: (scope: Scope) => void;
+  since: { from: string; to: string; pushes: number } | null;
+  ui: Ui;
+}) {
+  const { styles } = ui;
+  const readVersions = useRpc(versionsRpc);
+  const readCommits = useRpc(commitsRpc);
+  const ref = { projectPath: target.projectPath, iid: target.iid };
+  const versions = useQuery({
+    queryKey: versionsKey(target),
+    queryFn: () => readVersions(ref),
+    enabled: open,
+  });
+  const commits = useQuery({
+    queryKey: ["gitlab", "commits", target.projectPath, target.iid],
+    queryFn: () => readCommits(ref),
+    enabled: open,
+  });
+  const current = scopeId(scope);
+  const choose = (next: Scope) => {
+    onPick(next);
+    onClose();
+  };
+  const pushes = versions.data?.versions ?? [];
+  return (
+    <Modal title="Show changes" open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+      <Modal.Content>
+        <ScopeRow
+          title="All changes"
+          description="Everything this merge request changes against its target branch"
+          selected={current === "mr"}
+          onPress={() => choose({ kind: "mr" })}
+          ui={ui}
+        />
+        {since ? (
+          <ScopeRow
+            title="Since your last review"
+            description={`${since.pushes} ${since.pushes === 1 ? "push" : "pushes"} after the one you reviewed`}
+            selected={current === `compare:${since.from}..${since.to}`}
+            onPress={() =>
+              choose({ kind: "compare", from: since.from, to: since.to, label: "Since your last review" })
+            }
+            ui={ui}
+          />
+        ) : null}
+        {pushes.length > 1 ? <Text style={styles.sectionTitle}>Pushes</Text> : null}
+        {pushes.length > 1
+          ? pushes.map((version, index) => {
+              const previous = pushes[index + 1];
+              const from = previous?.headSha ?? version.baseSha;
+              const number = pushes.length - index;
+              const next: Scope = { kind: "compare", from, to: version.headSha, label: `Push ${number}` };
+              return (
+                <ScopeRow
+                  key={version.id}
+                  title={`Push ${number}${index === 0 ? " · latest" : ""}`}
+                  description={`${version.headSha.slice(0, 8)} · ${timeAgo(version.createdAt)}${previous ? "" : " · the first version"}`}
+                  selected={current === scopeId(next)}
+                  onPress={() => choose(next)}
+                  ui={ui}
+                />
+              );
+            })
+          : null}
+        <Text style={styles.sectionTitle}>Commits</Text>
+        {commits.isPending ? <Text style={styles.small}>Loading commits…</Text> : null}
+        {commits.isError ? <Text style={styles.error}>{errorText(commits.error)}</Text> : null}
+        {commits.data?.commits.map((commit) => {
+          const next: Scope = {
+            kind: "commit",
+            sha: commit.sha,
+            parentSha: commit.parentSha,
+            label: commit.shortSha,
+          };
+          return (
+            <ScopeRow
+              key={commit.sha}
+              title={commit.title}
+              description={`${commit.shortSha} · ${commit.author} · ${timeAgo(commit.createdAt)}`}
+              selected={current === scopeId(next)}
+              onPress={() => choose(next)}
+              ui={ui}
+            />
+          );
+        })}
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+function versionsKey(target: ItemRef) {
+  return ["gitlab", "versions", target.projectPath, target.iid] as const;
+}
+
+const VIEW_KEY = "paseo-gitlab:diff-view";
+
+function storedView(): DiffView {
+  try {
+    const raw = globalThis.localStorage?.getItem(VIEW_KEY);
+    if (raw) {
+      return JSON.parse(raw) as DiffView;
+    }
+    return { wrap: globalThis.localStorage?.getItem(WRAP_KEY) === "true" };
+  } catch {
+    return {};
+  }
+}
+
+const SHORTCUTS: [string, string][] = [
+  ["j / k", "Next / previous file"],
+  ["v", "Mark the file viewed and go to the next one"],
+  ["s", "Side by side"],
+  ["w", "Wrap long lines"],
+  ["x", "Hide whitespace changes"],
+  ["t", "Show or hide the file tree"],
+];
+
+function Toggle({
+  label,
+  checked,
+  disabled,
+  onChange,
+  ui,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+  ui: Ui;
+}) {
+  const { styles, theme } = ui;
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+      disabled={disabled}
+      onPress={() => onChange(!checked)}
+      style={[styles.row, { gap: 10, paddingVertical: 4 }, disabled ? { opacity: 0.5 } : null]}
+    >
+      <View
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 4,
+          borderWidth: 1.5,
+          alignItems: "center",
+          justifyContent: "center",
+          borderColor: checked ? theme.colors.accent : theme.colors.foregroundMuted,
+          backgroundColor: checked ? theme.colors.accent : "transparent",
+        }}
+      >
+        {checked ? <Icon name="Check" size={11} color={theme.colors.accentForeground} /> : null}
+      </View>
+      <Text style={styles.text}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function ViewOptions({
+  open,
+  onClose,
+  view,
+  onChange,
+  ui,
+}: {
+  open: boolean;
+  onClose: () => void;
+  view: DiffView;
+  onChange: (view: DiffView) => void;
+  ui: Ui;
+}) {
+  const { styles } = ui;
+  return (
+    <Modal title="Diff view" open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+      <Modal.Content>
+        <Toggle
+          label="Side by side"
+          checked={Boolean(view.split)}
+          onChange={(split) => onChange({ ...view, split })}
+          ui={ui}
+        />
+        <Toggle
+          label="Wrap long lines"
+          checked={Boolean(view.wrap || view.split)}
+          disabled={view.split}
+          onChange={(wrap) => onChange({ ...view, wrap })}
+          ui={ui}
+        />
+        <Toggle
+          label="Hide whitespace changes"
+          checked={Boolean(view.hideWhitespace)}
+          onChange={(hideWhitespace) => onChange({ ...view, hideWhitespace })}
+          ui={ui}
+        />
+        {Platform.OS === "web" ? (
+          <>
+            <Text style={styles.sectionTitle}>Keyboard</Text>
+            {SHORTCUTS.map(([keys, action]) => (
+              <View key={keys} style={[styles.row, { gap: 12 }]}>
+                <Text style={[styles.small, { width: 48, fontWeight: "600" }]}>{keys}</Text>
+                <Text style={styles.small}>{action}</Text>
+              </View>
+            ))}
+          </>
+        ) : null}
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+/**
+ * Keys for the diff, on the web only and only after you last clicked inside it,
+ * so typing j into an agent's composer or clicking another panel is left alone.
+ */
+function useDiffKeys(root: React.RefObject<View | null>, onKey: (key: string) => boolean) {
+  const handler = useRef(onKey);
+  handler.current = onKey;
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") {
+      return;
+    }
+    let inside = false;
+    const element = () => root.current as unknown as HTMLElement | null;
+    const onPointer = (event: PointerEvent) => {
+      inside = Boolean(element()?.contains(event.target as Node));
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        !inside ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        !element()?.offsetParent ||
+        (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)))
+      ) {
+        return;
+      }
+      if (handler.current(event.key)) {
+        event.preventDefault();
+      }
+    };
+    document.addEventListener("pointerdown", onPointer, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [root]);
+}
+
 function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPickOther: () => void }) {
   const { styles, theme } = ui;
+  const paseo = usePaseo();
+  const toast = useToast();
   const readDetail = useRpc(detailRpc);
   const readDiffs = useRpc(diffsRpc);
+  const readScoped = useRpc(scopedDiffsRpc);
+  const readVersions = useRpc(versionsRpc);
+  const readFileLines = useRpc(fileLinesRpc);
+  const readWorkspace = useRpc(workspaceRpc);
+  const directory = useWorkspace(ui.workspaceId, (workspace) => workspace.directory);
+  const [scope, setScope] = useState<Scope>({ kind: "mr" });
+  const scopeKey = scopeId(scope);
   // Refreshed so a reviewer's new comments show up under their lines without reopening.
   const detail = useQuery({
     queryKey: detailKey(target),
@@ -246,23 +661,42 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
     refetchInterval: DETAIL_REFRESH_MS,
   });
   const diffs = useQuery({
-    queryKey: diffsKey(target),
-    queryFn: () => readDiffs({ projectPath: target.projectPath, iid: target.iid }),
+    queryKey:
+      scope.kind === "mr" ? diffsKey(target) : ["gitlab", "diffs", target.projectPath, target.iid, scopeKey],
+    queryFn: () =>
+      scope.kind === "mr"
+        ? readDiffs({ projectPath: target.projectPath, iid: target.iid })
+        : scope.kind === "compare"
+          ? readScoped({ kind: "compare", projectPath: target.projectPath, from: scope.from, to: scope.to })
+          : readScoped({ kind: "commit", projectPath: target.projectPath, sha: scope.sha }),
   });
+  const versions = useQuery({
+    queryKey: versionsKey(target),
+    queryFn: () => readVersions({ projectPath: target.projectPath, iid: target.iid }),
+    staleTime: DETAIL_REFRESH_MS,
+  });
+  const workspace = useQuery({
+    queryKey: workspaceKey(directory ?? ""),
+    queryFn: () => readWorkspace({ directory: directory ?? "" }),
+    enabled: Boolean(directory),
+  });
+  const agents = useWorkspaceAgents(ui.workspaceId);
   const actions = useNoteActions(target, detail.data);
   const review = reviewKey(target);
-  const pending = usePendingComments(review);
+  const allPending = usePendingComments(review);
+  const pending = allPending.filter((comment) => (comment.scope ?? "mr") === scopeKey);
+  const viewedMarks = useViewed(review);
+  const localReviewAt = useReviewedAt(review);
   const [treeOpen, setTreeOpen] = useState(true);
-  const [wrap, setWrapState] = useState(() => globalThis.localStorage?.getItem(WRAP_KEY) === "true");
-  const toggleWrap = () =>
-    setWrapState((current) => {
-      try {
-        globalThis.localStorage?.setItem(WRAP_KEY, String(!current));
-      } catch {
-        // No storage: the choice lasts until the window closes.
-      }
-      return !current;
-    });
+  const [view, setViewState] = useState<DiffView>(storedView);
+  const setView = (next: DiffView) => {
+    setViewState(next);
+    try {
+      globalThis.localStorage?.setItem(VIEW_KEY, JSON.stringify(next));
+    } catch {
+      // No storage: the choice lasts until the window closes.
+    }
+  };
   const [treeWidth, setTreeWidthState] = useState(storedTreeWidth);
   const setTreeWidth = useMemo(
     () => (next: number) => {
@@ -276,12 +710,25 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
     [],
   );
   const [submitting, setSubmitting] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [picking, setPicking] = useState(false);
+  const [viewOptions, setViewOptions] = useState(false);
+  // Files opened or closed by hand; the rest are open unless marked viewed.
+  const [toggled, setToggled] = useState<Map<string, boolean>>(() => new Map());
   const [active, setActive] = useState<string | null>(null);
+  const root = useRef<View | null>(null);
   const scroll = useRef<NativeScrollView | null>(null);
   const offsets = useRef(new Map<string, number>());
 
   const files = diffs.data?.files ?? [];
+  const hashes = useMemo(() => new Map(files.map((file) => [fileKey(file), contentHash(file)])), [files]);
+  const viewedKey = (file: DiffFile) => `${scopeKey}\0${fileKey(file)}`;
+  const viewed = useMemo(
+    () =>
+      new Set(
+        files.filter((file) => viewedMarks[viewedKey(file)] === hashes.get(fileKey(file))).map(fileKey),
+      ),
+    [files, viewedMarks, hashes, scopeKey],
+  );
   const pendingByFile = useMemo(() => {
     const counts = new Map<string, number>();
     for (const comment of pending) {
@@ -290,10 +737,11 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
     }
     return counts;
   }, [pending]);
+  const threads = scope.kind === "mr" ? (detail.data?.discussions ?? []) : [];
   const threadsByFile = useMemo(() => {
     const counts = new Map<string, number>();
     for (const file of files) {
-      const count = (detail.data?.discussions ?? []).filter((discussion) => {
+      const count = threads.filter((discussion) => {
         const path = discussion.notes[0]?.position?.path;
         return path === file.newPath || path === file.oldPath;
       }).length;
@@ -302,7 +750,85 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
       }
     }
     return counts;
-  }, [files, detail.data]);
+  }, [files, threads]);
+
+  // Your last review: the later of a review sent from here and your last note on the MR.
+  const lastNoteAt = (detail.data?.discussions ?? [])
+    .flatMap((discussion) => discussion.notes)
+    .filter((note) => !note.system && note.author?.username === detail.data?.viewer)
+    .reduce<string | null>(
+      (latest, note) => (!latest || note.createdAt > latest ? note.createdAt : latest),
+      null,
+    );
+  const reviewedAt = [localReviewAt, lastNoteAt].filter(Boolean).sort().pop() ?? null;
+  const since = sinceLastReview(versions.data?.versions ?? [], reviewedAt);
+  const ownsBranch =
+    workspace.data?.checkout?.projectPath === target.projectPath &&
+    workspace.data.checkout.branch === detail.data?.sourceBranch;
+
+  const isExpanded = (file: DiffFile) => toggled.get(fileKey(file)) ?? !viewed.has(fileKey(file));
+  const setExpanded = (file: DiffFile, open: boolean) =>
+    setToggled((current) => new Map(current).set(fileKey(file), open));
+  const markViewed = (file: DiffFile, value: boolean) => {
+    setViewed(review, viewedKey(file), value ? (hashes.get(fileKey(file)) ?? null) : null);
+    setExpanded(file, !value);
+  };
+  const select = (file: DiffFile) => {
+    const key = fileKey(file);
+    setActive(key);
+    setExpanded(file, true);
+    const y = offsets.current.get(key);
+    if (y !== undefined) {
+      scroll.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+    }
+  };
+
+  useDiffKeys(root, (key) => {
+    const at = files.findIndex((file) => fileKey(file) === active);
+    const step = (by: number) => {
+      const next =
+        files[Math.min(files.length - 1, Math.max(0, (at < 0 ? (by > 0 ? -1 : files.length) : at) + by))];
+      if (next) {
+        select(next);
+      }
+    };
+    switch (key) {
+      case "j":
+        step(1);
+        return true;
+      case "k":
+        step(-1);
+        return true;
+      case "v": {
+        const file = files[at < 0 ? 0 : at];
+        if (file) {
+          const value = !viewed.has(fileKey(file));
+          markViewed(file, value);
+          const next = value
+            ? files.slice(at + 1).find((candidate) => !viewed.has(fileKey(candidate)))
+            : null;
+          if (next) {
+            select(next);
+          }
+        }
+        return true;
+      }
+      case "s":
+        setView({ ...view, split: !view.split });
+        return true;
+      case "w":
+        setView({ ...view, wrap: !view.wrap });
+        return true;
+      case "x":
+        setView({ ...view, hideWhitespace: !view.hideWhitespace });
+        return true;
+      case "t":
+        setTreeOpen((value) => !value);
+        return true;
+      default:
+        return false;
+    }
+  });
 
   if (detail.isPending || diffs.isPending) {
     return (
@@ -315,37 +841,60 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
     return (
       <Centered styles={styles}>
         <Text style={styles.error}>{errorText(detail.error ?? diffs.error)}</Text>
-        <Button
-          label="Retry"
-          onPress={() => {
-            void detail.refetch();
-            void diffs.refetch();
-          }}
-          styles={styles}
-          theme={theme}
-        />
+        <View style={styles.row}>
+          {scope.kind !== "mr" ? (
+            <Button
+              label="All changes"
+              onPress={() => setScope({ kind: "mr" })}
+              styles={styles}
+              theme={theme}
+            />
+          ) : null}
+          <Button
+            label="Retry"
+            onPress={() => {
+              void detail.refetch();
+              void diffs.refetch();
+            }}
+            styles={styles}
+            theme={theme}
+          />
+        </View>
       </Centered>
     );
   }
 
   const data = detail.data;
-  const select = (file: DiffFile) => {
-    const key = fileKey(file);
-    setActive(key);
-    setCollapsed((current) => {
-      const next = new Set(current);
-      next.delete(key);
-      return next;
-    });
-    const y = offsets.current.get(key);
-    if (y !== undefined) {
-      scroll.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+  const refs = scopeRefs(scope);
+  const headSha =
+    scope.kind === "mr" ? data.diffRefs?.headSha : scope.kind === "compare" ? scope.to : scope.sha;
+  const canComment = scope.kind === "mr" || refs !== null;
+  const loadFile = (file: DiffFile) =>
+    headSha && !file.deletedFile
+      ? () =>
+          readFileLines({ projectPath: target.projectPath, path: file.newPath, ref: headSha }).then(
+            (result) => result.lines,
+          )
+      : undefined;
+  const ask = async (selection: CodeSelection, body: string) => {
+    const agent = preferredAgent(ui.workspaceId, agents.data);
+    if (!agent) {
+      throw new Error("There is no agent in this workspace to ask. Start one first.");
+    }
+    try {
+      await paseo.agents.ref(agent.id).send(agentMessage(data, selection, body, "Question about"));
+      toast.show(`Asked ${agent.title}`, { variant: "success" });
+    } catch (error) {
+      toast.error(errorText(error));
+      throw error;
     }
   };
+  const additions = files.reduce((sum, file) => sum + file.additions, 0);
+  const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
 
   return (
     <ProjectContext.Provider value={target.projectPath}>
-      <View style={{ flex: 1 }}>
+      <View ref={root} style={{ flex: 1 }}>
         <View
           style={{
             paddingHorizontal: 16,
@@ -367,34 +916,54 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
               {data.title}
             </Text>
             <Button
-              label={pending.length > 0 ? `Your review · ${pending.length}` : "Your review"}
-              primary={pending.length > 0}
-              disabled={pending.length === 0}
+              label={allPending.length > 0 ? `Your review · ${allPending.length}` : "Your review"}
+              primary={allPending.length > 0}
+              disabled={allPending.length === 0}
               onPress={() => setSubmitting(true)}
               styles={styles}
               theme={theme}
             />
           </View>
           <View style={[styles.row, { gap: 6, paddingLeft: 34 }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Choose which changes to show"
+              onPress={() => setPicking(true)}
+              style={({ pressed }) => [styles.row, { gap: 2 }, pressed ? { opacity: 0.7 } : null]}
+            >
+              <Text style={[styles.small, { color: theme.colors.foreground, fontWeight: "600" }]}>
+                {scope.kind === "mr" ? "All changes" : scope.label}
+              </Text>
+              <Icon name="ChevronDown" size={12} color={theme.colors.foregroundMuted} />
+            </Pressable>
             <Text style={[styles.small, { flex: 1 }]} numberOfLines={1}>
+              {"  ·  "}
               {[
                 shortReference(data.reference),
                 `${data.sourceBranch} → ${data.targetBranch}`,
                 `${files.length} files`,
               ].join("  ·  ")}
               {"  ·  "}
-              <Text style={{ color: theme.colors.statusSuccess }}>+{files.reduce((sum, file) => sum + file.additions, 0)}</Text>{" "}
-              <Text style={{ color: theme.colors.statusDanger }}>−{files.reduce((sum, file) => sum + file.deletions, 0)}</Text>
+              <Text style={{ color: theme.colors.statusSuccess }}>+{additions}</Text>{" "}
+              <Text style={{ color: theme.colors.statusDanger }}>−{deletions}</Text>
+              {"  ·  "}
+              {viewed.size}/{files.length} viewed
             </Text>
             <IconButton
-              icon="WrapText"
-              label={wrap ? "Stop wrapping long lines" : "Wrap long lines"}
-              onPress={toggleWrap}
-              active={wrap}
+              icon="SlidersHorizontal"
+              label="Diff view options"
+              onPress={() => setViewOptions(true)}
+              active={Boolean(view.split || view.hideWhitespace)}
               theme={theme}
               styles={styles}
             />
-            <IconButton icon="ArrowLeftRight" label="Show another merge request" onPress={onPickOther} theme={theme} styles={styles} />
+            <IconButton
+              icon="ArrowLeftRight"
+              label="Show another merge request"
+              onPress={onPickOther}
+              theme={theme}
+              styles={styles}
+            />
             <IconButton
               icon="ExternalLink"
               label="Open the changes in GitLab"
@@ -404,6 +973,32 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
             />
           </View>
         </View>
+        {since && scope.kind === "mr" ? (
+          <View
+            style={[
+              styles.row,
+              { gap: 8, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: theme.colors.surface1 },
+            ]}
+          >
+            <Icon name="GitCommitHorizontal" size={14} color={theme.colors.accent} />
+            <Text style={[styles.small, { flex: 1 }]}>
+              {since.pushes} new {since.pushes === 1 ? "push" : "pushes"} since your last review
+            </Text>
+            <Button
+              label="Show only those"
+              onPress={() =>
+                setScope({ kind: "compare", from: since.from, to: since.to, label: "Since your last review" })
+              }
+              styles={styles}
+              theme={theme}
+            />
+          </View>
+        ) : null}
+        {diffs.data.truncated ? (
+          <Text style={[styles.small, { paddingHorizontal: 16, paddingTop: 6 }]}>
+            GitLab cut this diff short; the rest is in GitLab.
+          </Text>
+        ) : null}
         <View style={{ flex: 1, flexDirection: "row" }}>
           {treeOpen ? (
             <>
@@ -413,6 +1008,7 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
                 onSelect={select}
                 pendingByFile={pendingByFile}
                 threadsByFile={threadsByFile}
+                viewed={viewed}
                 width={treeWidth}
                 ui={ui}
               />
@@ -420,25 +1016,22 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
             </>
           ) : null}
           <ScrollView ref={scroll} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
+            {files.length === 0 ? <Text style={styles.muted}>No file changes here.</Text> : null}
             {files.map((file) => {
               const key = fileKey(file);
               return (
-                <View key={key} onLayout={(event) => offsets.current.set(key, event.nativeEvent.layout.y)}>
+                <View
+                  key={`${scopeKey}:${key}`}
+                  onLayout={(event) => offsets.current.set(key, event.nativeEvent.layout.y)}
+                >
                   <FileDiff
                     file={file}
-                    detail={data}
-                    expanded={!collapsed.has(key)}
-                    onToggle={() =>
-                      setCollapsed((current) => {
-                        const next = new Set(current);
-                        if (next.has(key)) {
-                          next.delete(key);
-                        } else {
-                          next.add(key);
-                        }
-                        return next;
-                      })
-                    }
+                    threads={threads}
+                    changesUrl={`${data.webUrl}/diffs`}
+                    canComment={canComment}
+                    canSuggest={scope.kind === "mr" && data.canPush}
+                    expanded={isExpanded(file)}
+                    onToggle={() => setExpanded(file, !isExpanded(file))}
                     actions={actions}
                     handlers={{
                       stack: {
@@ -448,14 +1041,20 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
                             newPath: selection.file.newPath,
                             lines: selection.lines,
                             body,
+                            ...(scope.kind === "mr" ? {} : { scope: scopeKey, ...(refs ? { refs } : {}) }),
                           }),
                         edit: (id, body) => editPendingComment(review, id, body),
                         remove: (id) => removePendingComments(review, [id]),
+                        ask,
                       },
                     }}
-                    pending={pending.filter((comment) => comment.oldPath === file.oldPath && comment.newPath === file.newPath)}
+                    pending={pending.filter(
+                      (comment) => comment.oldPath === file.oldPath && comment.newPath === file.newPath,
+                    )}
                     viewer={{ username: data.viewer, name: data.viewer }}
-                    wrap={wrap}
+                    view={view}
+                    viewed={{ value: viewed.has(key), onChange: (value) => markViewed(file, value) }}
+                    loadFile={loadFile(file)}
                     ui={ui}
                   />
                 </View>
@@ -468,9 +1067,26 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
         open={submitting}
         onClose={() => setSubmitting(false)}
         detail={data}
-        comments={pending}
+        comments={allPending}
         reviewId={review}
         workspaceId={ui.workspaceId}
+        ownsBranch={ownsBranch}
+        ui={ui}
+      />
+      <ScopePicker
+        open={picking}
+        onClose={() => setPicking(false)}
+        target={target}
+        scope={scope}
+        onPick={setScope}
+        since={since}
+        ui={ui}
+      />
+      <ViewOptions
+        open={viewOptions}
+        onClose={() => setViewOptions(false)}
+        view={view}
+        onChange={setView}
         ui={ui}
       />
     </ProjectContext.Provider>
@@ -508,17 +1124,35 @@ export function DiffPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
     body = (
       <Centered styles={styles}>
         <Text style={styles.text}>Pick a merge request to review its changes here.</Text>
-        <Button label="Choose a merge request" primary onPress={() => setPicking(true)} styles={styles} theme={theme} />
+        <Button
+          label="Choose a merge request"
+          primary
+          onPress={() => setPicking(true)}
+          styles={styles}
+          theme={theme}
+        />
       </Centered>
     );
   } else {
-    body = <ReviewDiff key={`${target.projectPath}:${target.iid}`} target={target} ui={ui} onPickOther={() => setPicking(true)} />;
+    body = (
+      <ReviewDiff
+        key={`${target.projectPath}:${target.iid}`}
+        target={target}
+        ui={ui}
+        onPickOther={() => setPicking(true)}
+      />
+    );
   }
 
   return (
     <HostContext.Provider value={host}>
       <View style={styles.screen}>{body}</View>
-      <MergeRequestPicker open={picking} onClose={() => setPicking(false)} onPick={(ref) => setDiffTarget(workspaceId, ref)} ui={ui} />
+      <MergeRequestPicker
+        open={picking}
+        onClose={() => setPicking(false)}
+        onPick={(ref) => setDiffTarget(workspaceId, ref)}
+        ui={ui}
+      />
     </HostContext.Provider>
   );
 }

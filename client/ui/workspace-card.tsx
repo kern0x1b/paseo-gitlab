@@ -54,7 +54,11 @@ export function WorkspaceCard({
               icon="FileDiff"
               label="Open the diff in the main area"
               onPress={() =>
-                openDiff(ui.workspaceId, { kind: "mr", projectPath: mergeRequest.projectPath, iid: mergeRequest.iid })
+                openDiff(ui.workspaceId, {
+                  kind: "mr",
+                  projectPath: mergeRequest.projectPath,
+                  iid: mergeRequest.iid,
+                })
               }
               theme={theme}
               styles={styles}
@@ -72,14 +76,18 @@ export function WorkspaceCard({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Open ${mergeRequest.reference}`}
-            onPress={() => onOpen({ kind: "mr", projectPath: mergeRequest.projectPath, iid: mergeRequest.iid })}
+            onPress={() =>
+              onOpen({ kind: "mr", projectPath: mergeRequest.projectPath, iid: mergeRequest.iid })
+            }
             style={({ pressed }) => [{ gap: 4 }, pressed ? styles.listRowPressed : null]}
           >
             <View style={[styles.row, { flexWrap: "wrap" }]}>
               <PipelineDot status={mergeRequest.pipelineStatus} theme={theme} styles={styles} />
               <Text style={styles.muted}>{shortReference(mergeRequest.reference)}</Text>
               {mergeRequest.pipelineStatus ? (
-                <Text style={styles.small}>pipeline {humanize(mergeRequest.pipelineStatus).toLowerCase()}</Text>
+                <Text style={styles.small}>
+                  pipeline {humanize(mergeRequest.pipelineStatus).toLowerCase()}
+                </Text>
               ) : null}
               {state.unresolvedThreads > 0 ? (
                 <Badge

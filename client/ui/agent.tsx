@@ -31,7 +31,13 @@ interface AgentChoice {
  * already running here, or a new one started with the settings of the most
  * recent one, so it gets the same provider, model and permission mode.
  */
-function AgentPicker({ open, onClose, workspaceId, subject, ui }: {
+function AgentPicker({
+  open,
+  onClose,
+  workspaceId,
+  subject,
+  ui,
+}: {
   open: boolean;
   onClose: () => void;
   workspaceId: string;
@@ -76,7 +82,9 @@ function AgentPicker({ open, onClose, workspaceId, subject, ui }: {
       if (target === "new") {
         const template = agents.data?.template;
         if (!template?.model) {
-          throw new Error("Start an agent in Paseo once, so a new one knows which provider and model to use.");
+          throw new Error(
+            "Start an agent in Paseo once, so a new one knows which provider and model to use.",
+          );
         }
         await paseo.workspaces.ref(workspaceId).agents.create({
           config: {
@@ -156,12 +164,32 @@ function AgentPicker({ open, onClose, workspaceId, subject, ui }: {
   );
 }
 
-export function SendToAgentButton({ workspaceId, subject, ui }: { workspaceId: string; subject: AgentSubject; ui: Ui }) {
+export function SendToAgentButton({
+  workspaceId,
+  subject,
+  ui,
+}: {
+  workspaceId: string;
+  subject: AgentSubject;
+  ui: Ui;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <IconButton icon="Bot" label="Send to an agent" onPress={() => setOpen(true)} theme={ui.theme} styles={ui.styles} />
-      <AgentPicker open={open} onClose={() => setOpen(false)} workspaceId={workspaceId} subject={subject} ui={ui} />
+      <IconButton
+        icon="Bot"
+        label="Send to an agent"
+        onPress={() => setOpen(true)}
+        theme={ui.theme}
+        styles={ui.styles}
+      />
+      <AgentPicker
+        open={open}
+        onClose={() => setOpen(false)}
+        workspaceId={workspaceId}
+        subject={subject}
+        ui={ui}
+      />
     </>
   );
 }

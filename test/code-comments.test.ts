@@ -10,7 +10,9 @@ import { agentMessage, rangeLabel, suggestionFor } from "../client/ui/code-comme
 import type { Detail, DiffFile } from "../shared/contract";
 import { codePosition, lineCode, parseUnifiedDiff } from "../server/diff";
 
-const lines = parseUnifiedDiff(["@@ -10,3 +10,4 @@", " keep", "-old", "+new one", "+new two", " tail"].join("\n"));
+const lines = parseUnifiedDiff(
+  ["@@ -10,3 +10,4 @@", " keep", "-old", "+new one", "+new two", " tail"].join("\n"),
+);
 const [, keep, removed, addedOne, addedTwo] = lines;
 const refs = { baseSha: "b", headSha: "h", startSha: "s" };
 
@@ -33,20 +35,38 @@ describe("line positions", () => {
 
 describe("codePosition", () => {
   it("anchors one line by its numbers and adds no range", () => {
-    const position = codePosition({ diffRefs: refs, oldPath: "a.ts", newPath: "a.ts", start: addedOne!, end: addedOne! });
+    const position = codePosition({
+      diffRefs: refs,
+      oldPath: "a.ts",
+      newPath: "a.ts",
+      start: addedOne!,
+      end: addedOne!,
+    });
     assert.equal(position.new_line, 11);
     assert.equal(position.old_line, null);
     assert.equal(position.line_range, undefined);
   });
 
   it("anchors a range at its last line and describes both ends", () => {
-    const position = codePosition({ diffRefs: refs, oldPath: "a.ts", newPath: "a.ts", start: keep!, end: addedTwo! });
+    const position = codePosition({
+      diffRefs: refs,
+      oldPath: "a.ts",
+      newPath: "a.ts",
+      start: keep!,
+      end: addedTwo!,
+    });
     assert.equal(position.new_line, 12);
     assert.deepEqual(position.line_range, {
       start: { line_code: lineCode("a.ts", keep!), type: "old", old_line: 10, new_line: 10 },
       end: { line_code: lineCode("a.ts", addedTwo!), type: "new", old_line: null, new_line: 12 },
     });
-    const onRemoved = codePosition({ diffRefs: refs, oldPath: "a.ts", newPath: "a.ts", start: removed!, end: removed! });
+    const onRemoved = codePosition({
+      diffRefs: refs,
+      oldPath: "a.ts",
+      newPath: "a.ts",
+      start: removed!,
+      end: removed!,
+    });
     assert.equal(onRemoved.old_line, 11);
     assert.equal(onRemoved.new_line, null);
   });
@@ -71,6 +91,9 @@ describe("agent comments", () => {
   it("labels single lines and ranges, and builds a suggestion over the kept lines", () => {
     assert.equal(rangeLabel([addedOne!]), "line 11");
     assert.equal(rangeLabel([keep!, addedTwo!]), "lines 10–12");
-    assert.equal(suggestionFor([removed!, addedOne!, addedTwo!]), "```suggestion:-1+0\nnew one\nnew two\n```");
+    assert.equal(
+      suggestionFor([removed!, addedOne!, addedTwo!]),
+      "```suggestion:-1+0\nnew one\nnew two\n```",
+    );
   });
 });

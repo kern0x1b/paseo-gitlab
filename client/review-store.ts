@@ -14,6 +14,10 @@ export interface PendingComment {
   lines: DiffLine[];
   body: string;
   createdAt: string;
+  /** Which diff it was written on, when not the MR's whole change: "compare:<from>..<to>" or "commit:<sha>". */
+  scope?: string;
+  /** The commits that diff compares, when not the MR's own; a GitLab comment is anchored to them. */
+  refs?: { baseSha: string; headSha: string; startSha: string };
 }
 
 const STORAGE_KEY = "paseo-gitlab:pending-reviews";
@@ -87,5 +91,7 @@ export function usePendingComments(key: string): PendingComment[] {
 /** Whether a pending comment ends on this diff line, which is where it is shown. */
 export function endsAt(comment: PendingComment, line: DiffLine): boolean {
   const last = comment.lines[comment.lines.length - 1];
-  return Boolean(last && last.kind === line.kind && last.oldPos === line.oldPos && last.newPos === line.newPos);
+  return Boolean(
+    last && last.kind === line.kind && last.oldPos === line.oldPos && last.newPos === line.newPos,
+  );
 }

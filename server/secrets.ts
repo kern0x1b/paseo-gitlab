@@ -27,7 +27,9 @@ function runSecurity(args: string[], stdin?: string): Promise<{ code: number; st
     // stdin is only opened when there is something to write: `find-generic-password`
     // never reads it and can exit first, and ending a pipe to a gone process raises
     // EPIPE, which without a listener takes the whole plugin process down.
-    const child = spawn("security", args, { stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "ignore"] });
+    const child = spawn("security", args, {
+      stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "ignore"],
+    });
     let stdout = "";
     const timer = setTimeout(() => child.kill(), SECURITY_TIMEOUT_MS);
     child.stdout?.on("data", (chunk: Buffer) => {

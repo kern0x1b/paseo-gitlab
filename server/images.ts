@@ -22,7 +22,13 @@ export function imageTypeOf(bytes: Uint8Array): string | null {
   if (starts(0x47, 0x49, 0x46, 0x38)) {
     return "image/gif";
   }
-  if (starts(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+  if (
+    starts(0x52, 0x49, 0x46, 0x46) &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
     return "image/webp";
   }
   return null;

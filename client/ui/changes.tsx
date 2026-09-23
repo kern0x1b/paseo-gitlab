@@ -1,12 +1,13 @@
 import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import React, { Fragment, useMemo, useState } from "react";
+import React, { Fragment, useEffect, useMemo, useState } from "react";
+import { Icon, useToast } from "@getpaseo/plugin/client/react-native";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import {
   addCodeCommentRpc,
   detailRpc,
   diffsRpc,
-  type Detail,
+  fileLinesRpc,
   type DiffFile,
   type DiffLine,
   type Discussion,
@@ -16,9 +17,18 @@ import type { PendingComment } from "../review-store";
 import { endsAt } from "../review-store";
 import { Avatar, Badge, Button, Centered, errorText, IconButton } from "./common";
 import { ProjectContext } from "./composer-tools";
-import { Composer, Thread, useNoteActions, useWrite, type ComposerAction, type NoteActions, type Ui } from "./detail";
+import {
+  Composer,
+  Thread,
+  useNoteActions,
+  useWrite,
+  type ComposerAction,
+  type NoteActions,
+  type Ui,
+} from "./detail";
 import { lineNumber, rangeLabel, suggestionFor, type CodeSelection } from "./code-comment";
 import { highlightLine, languageOf, tokenPalette, type HighlightState, type Token } from "./highlight";
+import { hideWhitespace, splitRows, TAIL, withContext, type ShownLine } from "./diff-view";
 import { detailKey } from "./queries";
 import { draftsKey, ReviewBar } from "./review";
 
@@ -29,7 +39,8 @@ const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monosp
  * wide. Normal wrapping breaks at the indentation's last space, which leaves the
  * line number alone on one row and the code on the next.
  */
-const CODE_WRAP = Platform.OS === "web" ? ({ whiteSpace: "pre-wrap", wordBreak: "break-all" } as object) : null;
+const CODE_WRAP =
+  Platform.OS === "web" ? ({ whiteSpace: "pre-wrap", wordBreak: "break-all" } as object) : null;
 /** The default, as in GitLab and editors: a line keeps its length and the file scrolls sideways. */
 const CODE_NOWRAP = Platform.OS === "web" ? ({ whiteSpace: "pre" } as object) : null;
 /** Keeps threads and comment boxes in view while the code under them scrolls sideways. */
@@ -66,11 +77,14 @@ function LineRow({
   onPress,
   selected,
   wrap,
+  side,
   ui,
 }: {
-  line: DiffLine;
+  line: ShownLine;
   tokens: Token[];
   wrap: boolean;
+  /** Side by side: which half this is, so only its line number shows. */
+  side?: "old" | "new";
   onPress?: () => void;
   selected: boolean;
   ui: Ui;
@@ -82,9 +96,7 @@ function LineRow({
       ? theme.colors.statusSuccess
       : line.kind === "removed"
         ? theme.colors.statusDanger
-        : line.kind === "hunk"
-          ? theme.colors.surface2
-          : null;
+        : null;
   const cell = { fontFamily: MONO, fontSize: 11, lineHeight: 17 };
   const number = { ...cell, width: 38, color: theme.colors.foregroundMuted, textAlign: "right" as const };
   return (
@@ -93,7 +105,11 @@ function LineRow({
       accessibilityLabel={onPress ? `Select line ${lineNumber(line)}` : undefined}
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed }) => [{ flexDirection: "row", position: "relative" }, pressed ? { opacity: 0.8 } : null]}
+      style={({ pressed }) => [
+        { flexDirection: "row", position: "relative" },
+        side ? { flex: 1 } : null,
+        pressed ? { opacity: 0.8 } : null,
+      ]}
     >
       {tint ? (
         <View
@@ -105,7 +121,7 @@ function LineRow({
             left: 0,
             right: 0,
             backgroundColor: tint,
-            opacity: line.kind === "hunk" ? 1 : 0.14,
+            opacity: 0.14,
           }}
         />
       ) : null}
@@ -125,41 +141,95 @@ function LineRow({
           }}
         />
       ) : null}
-      {line.kind === "hunk" ? (
-        <Text style={{ ...cell, flex: 1, paddingHorizontal: 8, color: theme.colors.foregroundMuted }} numberOfLines={1}>
+      {side !== "new" ? <Text style={number}>{line.oldLine ?? ""}</Text> : null}
+      {side !== "old" ? <Text style={number}>{line.newLine ?? ""}</Text> : null}
+      <Text style={{ ...cell, width: 16, textAlign: "center", color: theme.colors.foregroundMuted }}>
+        {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : ""}
+      </Text>
+      <Text
+        selectable
+        style={[
+          { ...cell, color: theme.colors.foreground, paddingRight: 8 },
+          wrap ? [{ flex: 1 }, CODE_WRAP] : [{ flexGrow: 1, flexShrink: 0 }, CODE_NOWRAP],
+        ]}
+      >
+        {line.text
+          ? tokens.map((token, index) =>
+              palette[token.kind] ? (
+                <Text
+                  key={index}
+                  style={{
+                    color: palette[token.kind]!,
+                    fontStyle: token.kind === "comment" ? "italic" : "normal",
+                  }}
+                >
+                  {token.text}
+                </Text>
+              ) : (
+                token.text
+              ),
+            )
+          : " "}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** A hunk header, and the way to see the unchanged lines it skips. */
+function HunkRow({
+  line,
+  onExpand,
+  busy,
+  ui,
+}: {
+  line: ShownLine;
+  onExpand?: () => void;
+  busy: boolean;
+  ui: Ui;
+}) {
+  const { theme } = ui;
+  if (!onExpand && !line.text) {
+    return null;
+  }
+  const cell = { fontFamily: MONO, fontSize: 11, lineHeight: 17 };
+  const label =
+    line.gap === TAIL
+      ? line.gapSize
+        ? `Show ${line.gapSize} more lines`
+        : "Show the rest of the file"
+      : `Show ${line.gapSize} hidden lines`;
+  return (
+    <Pressable
+      accessibilityRole={onExpand ? "button" : undefined}
+      accessibilityLabel={onExpand ? label : undefined}
+      onPress={onExpand}
+      disabled={!onExpand || busy}
+      style={({ pressed }) => [
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          paddingHorizontal: 8,
+          backgroundColor: theme.colors.surface2,
+        },
+        pressed ? { opacity: 0.8 } : null,
+      ]}
+    >
+      {onExpand ? (
+        <>
+          <Icon
+            name={line.gap === TAIL ? "ChevronsDown" : "ChevronsUpDown"}
+            size={12}
+            color={theme.colors.accent}
+          />
+          <Text style={{ ...cell, color: theme.colors.accent }}>{busy ? "Loading…" : label}</Text>
+        </>
+      ) : null}
+      {line.text ? (
+        <Text style={{ ...cell, flex: 1, color: theme.colors.foregroundMuted }} numberOfLines={1}>
           {line.text}
         </Text>
-      ) : (
-        <>
-          <Text style={number}>{line.oldLine ?? ""}</Text>
-          <Text style={number}>{line.newLine ?? ""}</Text>
-          <Text style={{ ...cell, width: 16, textAlign: "center", color: theme.colors.foregroundMuted }}>
-            {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : ""}
-          </Text>
-          <Text
-            selectable
-            style={[
-              { ...cell, color: theme.colors.foreground, paddingRight: 8 },
-              wrap ? [{ flex: 1 }, CODE_WRAP] : [{ flexGrow: 1, flexShrink: 0 }, CODE_NOWRAP],
-            ]}
-          >
-            {line.text
-              ? tokens.map((token, index) =>
-                  palette[token.kind] ? (
-                    <Text
-                      key={index}
-                      style={{ color: palette[token.kind]!, fontStyle: token.kind === "comment" ? "italic" : "normal" }}
-                    >
-                      {token.text}
-                    </Text>
-                  ) : (
-                    token.text
-                  ),
-                )
-              : " "}
-          </Text>
-        </>
-      )}
+      ) : null}
     </Pressable>
   );
 }
@@ -172,11 +242,26 @@ export interface CommentHandlers {
     add: (selection: CodeSelection, body: string) => void;
     edit: (id: string, body: string) => void;
     remove: (id: string) => void;
+    /** A question about the lines, sent to your agent now instead of waiting in the review. */
+    ask?: (selection: CodeSelection, body: string) => Promise<void>;
   };
 }
 
+/** How the diff is laid out; the main area lets you change it, the sidebar uses the defaults. */
+export interface DiffView {
+  wrap?: boolean;
+  split?: boolean;
+  hideWhitespace?: boolean;
+}
+
 /** A comment waiting in your review, shown under the line it ends on, like GitLab's pending notes. */
-function PendingNote({ comment, viewer, onEdit, onRemove, ui }: {
+function PendingNote({
+  comment,
+  viewer,
+  onEdit,
+  onRemove,
+  ui,
+}: {
   comment: PendingComment;
   viewer: { username: string; name: string } | null;
   onEdit: (body: string) => void;
@@ -186,7 +271,17 @@ function PendingNote({ comment, viewer, onEdit, onRemove, ui }: {
   const { styles, theme } = ui;
   const [editing, setEditing] = useState(false);
   return (
-    <View style={{ margin: 8, padding: 10, gap: 6, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.statusWarning, backgroundColor: theme.colors.surface1 }}>
+    <View
+      style={{
+        margin: 8,
+        padding: 10,
+        gap: 6,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: theme.colors.statusWarning,
+        backgroundColor: theme.colors.surface1,
+      }}
+    >
       <View style={styles.row}>
         <Avatar person={viewer ? { ...viewer } : null} styles={styles} size={20} />
         <Text style={styles.noteAuthor}>{viewer?.name ?? "You"}</Text>
@@ -194,8 +289,20 @@ function PendingNote({ comment, viewer, onEdit, onRemove, ui }: {
         <View style={styles.spacer} />
         {!editing ? (
           <>
-            <IconButton icon="Pencil" label="Edit the comment" onPress={() => setEditing(true)} theme={theme} styles={styles} />
-            <IconButton icon="Trash2" label="Remove the comment" onPress={onRemove} theme={theme} styles={styles} />
+            <IconButton
+              icon="Pencil"
+              label="Edit the comment"
+              onPress={() => setEditing(true)}
+              theme={theme}
+              styles={styles}
+            />
+            <IconButton
+              icon="Trash2"
+              label="Remove the comment"
+              onPress={onRemove}
+              theme={theme}
+              styles={styles}
+            />
           </>
         ) : null}
       </View>
@@ -219,38 +326,101 @@ function PendingNote({ comment, viewer, onEdit, onRemove, ui }: {
   );
 }
 
+function ViewedBox({
+  checked,
+  onChange,
+  ui,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  ui: Ui;
+}) {
+  const { styles, theme } = ui;
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityLabel="Viewed"
+      accessibilityState={{ checked }}
+      onPress={() => onChange(!checked)}
+      hitSlop={6}
+      style={[styles.row, { gap: 4 }]}
+    >
+      <View
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: 3,
+          borderWidth: 1.5,
+          alignItems: "center",
+          justifyContent: "center",
+          borderColor: checked ? theme.colors.accent : theme.colors.foregroundMuted,
+          backgroundColor: checked ? theme.colors.accent : "transparent",
+        }}
+      >
+        {checked ? <Icon name="Check" size={10} color={theme.colors.accentForeground} /> : null}
+      </View>
+      <Text style={styles.small}>Viewed</Text>
+    </Pressable>
+  );
+}
+
 export function FileDiff({
   file,
-  detail,
+  threads: allThreads = [],
+  changesUrl,
+  canComment,
+  canSuggest,
   expanded,
   onToggle,
   actions,
   handlers,
   pending = [],
   viewer = null,
-  wrap = false,
+  view = {},
+  viewed,
+  loadFile,
   ui,
 }: {
   file: DiffFile;
-  detail: Detail;
+  /** The MR's threads; the ones on this file are shown under their lines. */
+  threads?: Discussion[];
+  /** Where GitLab shows these changes, for a file too large to show here. */
+  changesUrl: string;
+  canComment: boolean;
+  /** Whether "Suggest change" is offered: you can push to the source branch. */
+  canSuggest: boolean;
   expanded: boolean;
   onToggle: () => void;
-  actions: NoteActions;
-  handlers: CommentHandlers;
+  actions?: NoteActions;
+  handlers?: CommentHandlers;
   /** This file's comments waiting in your local review. */
   pending?: PendingComment[];
-  /** Wrap long lines instead of scrolling the file sideways. */
-  wrap?: boolean;
   viewer?: { username: string; name: string; avatarUrl?: string | null } | null;
+  view?: DiffView;
+  viewed?: { value: boolean; onChange: (value: boolean) => void };
+  /** The whole file at the diff's head, to show the unchanged lines around the hunks. */
+  loadFile?: () => Promise<string[] | null>;
   ui: Ui;
 }) {
   const { styles, theme } = ui;
-  // Indexes into file.lines; the first click anchors, the next one in the same file stretches it.
+  const toast = useToast();
+  // Indexes into the shown lines; the first click anchors, the next one in the same file stretches it.
   const [selection, setSelection] = useState<{ anchor: number; focus: number } | null>(null);
-  const threads = detail.discussions.filter((discussion) => inFile(discussion, file));
+  const [openGaps, setOpenGaps] = useState<ReadonlySet<number>>(() => new Set());
+  const [fileLines, setFileLines] = useState<string[] | null>(null);
+  const [noFile, setNoFile] = useState(false);
+  const [loadingGap, setLoadingGap] = useState<number | null>(null);
+  const expandable = Boolean(loadFile) && !noFile;
+  const wrap = Boolean(view.wrap || view.split);
+  const lines: ShownLine[] = useMemo(() => {
+    const withGaps = expandable ? withContext(file, fileLines, openGaps) : file.lines;
+    return view.hideWhitespace ? hideWhitespace(withGaps) : withGaps;
+  }, [file, fileLines, openGaps, expandable, view.hideWhitespace]);
+  useEffect(() => setSelection(null), [view.hideWhitespace]);
+
+  const threads = actions ? allThreads.filter((discussion) => inFile(discussion, file)) : [];
   const placed = new Set<string>();
   const title = file.renamedFile ? `${file.oldPath} → ${file.newPath}` : file.newPath;
-  const stacking = Boolean(handlers.stack);
   const [visibleWidth, setVisibleWidth] = useState(0);
   // What sits between code lines takes the visible width and stays put while the code scrolls.
   const pinned = wrap ? null : [{ width: visibleWidth || undefined }, PIN_LEFT];
@@ -258,7 +428,7 @@ export function FileDiff({
   const highlighted = useMemo(() => {
     const language = languageOf(file.newPath);
     let state: HighlightState = { inBlock: false };
-    return file.lines.map((line) => {
+    return lines.map((line) => {
       if (line.kind === "hunk") {
         state = { inBlock: false };
         return [];
@@ -267,20 +437,52 @@ export function FileDiff({
       state = result.state;
       return result.tokens;
     });
-  }, [file]);
-  const canComment = stacking || (detail.canComment && detail.diffRefs != null);
+  }, [lines, file.newPath]);
+  const commentable = canComment && Boolean(handlers);
   const low = selection ? Math.min(selection.anchor, selection.focus) : -1;
   const high = selection ? Math.max(selection.anchor, selection.focus) : -1;
-  const selectedLines = selection ? file.lines.slice(low, high + 1).filter((line) => line.kind !== "hunk") : [];
+  const selectedLines = selection
+    ? lines.slice(low, high + 1).filter((line) => line.kind !== "hunk" && !(line as ShownLine).folded)
+    : [];
 
   const pick = (index: number) =>
-    setSelection((current) => (current && current.anchor !== index ? { anchor: current.anchor, focus: index } : { anchor: index, focus: index }));
+    setSelection((current) =>
+      current && current.anchor !== index
+        ? { anchor: current.anchor, focus: index }
+        : { anchor: index, focus: index },
+    );
+
+  const expand = async (gap: number) => {
+    if (!loadFile) {
+      return;
+    }
+    if (!fileLines) {
+      setLoadingGap(gap);
+      try {
+        const loaded = await loadFile();
+        if (!loaded) {
+          setNoFile(true);
+          toast.show("This file is binary or too large to expand here.");
+          return;
+        }
+        setFileLines(loaded);
+      } catch (error) {
+        toast.error(errorText(error));
+        return;
+      } finally {
+        setLoadingGap(null);
+      }
+    }
+    setSelection(null);
+    setOpenGaps((current) => new Set(current).add(gap));
+  };
 
   const composerActions = (): { primary: ComposerAction; others: ComposerAction[] } => {
     const current: CodeSelection = { file, lines: selectedLines };
     const done = () => setSelection(null);
-    if (handlers.stack) {
+    if (handlers?.stack) {
       const stack = handlers.stack;
+      const ask = stack.ask;
       return {
         primary: {
           label: "Add to review",
@@ -289,15 +491,144 @@ export function FileDiff({
             done();
           },
         },
-        others: [],
+        others: ask
+          ? [
+              {
+                label: "Ask agent now",
+                onSend: async (body) => {
+                  await ask(current, body);
+                  done();
+                },
+              },
+            ]
+          : [],
       };
     }
     const gitlab = (asDraft: boolean) => async (body: string) => {
-      await handlers.toGitLab?.(current, body, asDraft);
+      await handlers?.toGitLab?.(current, body, asDraft);
       done();
     };
-    return { primary: { label: "Comment", onSend: gitlab(false) }, others: [{ label: "Add to review", onSend: gitlab(true) }] };
+    return {
+      primary: { label: "Comment", onSend: gitlab(false) },
+      others: [{ label: "Add to review", onSend: gitlab(true) }],
+    };
   };
+
+  const lineRow = (index: number, side?: "old" | "new") => {
+    const line = lines[index]!;
+    if (line.kind === "hunk") {
+      const gap = line.gap;
+      return (
+        <HunkRow
+          line={line}
+          busy={loadingGap !== null && loadingGap === gap}
+          onExpand={expandable && gap !== undefined ? () => void expand(gap) : undefined}
+          ui={ui}
+        />
+      );
+    }
+    return (
+      <LineRow
+        line={line}
+        wrap={wrap}
+        side={side}
+        tokens={highlighted[index] ?? []}
+        selected={index >= low && index <= high && !line.folded}
+        onPress={commentable && !line.folded ? () => pick(index) : undefined}
+        ui={ui}
+      />
+    );
+  };
+
+  // Threads, pending comments and the open composer that belong under a line.
+  const below = (index: number) => {
+    const line = lines[index]!;
+    const here = threads.filter((discussion) => anchoredAt(discussion, line));
+    here.forEach((discussion) => placed.add(discussion.id));
+    const waiting = handlers?.stack ? pending.filter((comment) => endsAt(comment, line)) : [];
+    const { primary, others } = index === high ? composerActions() : { primary: null, others: [] };
+    return (
+      <>
+        {actions
+          ? here.map((discussion) => (
+              <View key={discussion.id} style={[{ padding: 8 }, pinned]}>
+                <Thread discussion={discussion} actions={actions} ui={ui} />
+              </View>
+            ))
+          : null}
+        {waiting.map((comment) => (
+          <View key={comment.id} style={pinned}>
+            <PendingNote
+              comment={comment}
+              viewer={viewer}
+              onEdit={(body) => handlers!.stack!.edit(comment.id, body)}
+              onRemove={() => handlers!.stack!.remove(comment.id)}
+              ui={ui}
+            />
+          </View>
+        ))}
+        {primary && selectedLines.length > 0 ? (
+          <View style={[{ padding: 8, gap: 6 }, pinned]}>
+            <Text style={styles.small}>
+              Comment on {rangeLabel(selectedLines)} · click another line to select a range
+            </Text>
+            <Composer
+              key={`${low}-${high}`}
+              placeholder="Write a comment…"
+              sendLabel={primary.label}
+              autoFocus
+              onSend={primary.onSend}
+              others={others}
+              templates={
+                canSuggest && selectedLines.some((line) => line.kind !== "removed")
+                  ? [{ label: "Suggest change", text: suggestionFor(selectedLines) }]
+                  : []
+              }
+              onCancel={() => setSelection(null)}
+              ui={ui}
+            />
+          </View>
+        ) : null}
+      </>
+    );
+  };
+
+  const blank = <View style={{ flex: 1, minHeight: 17, backgroundColor: theme.colors.surface1 }} />;
+  const body = view.split
+    ? splitRows(lines).map((row, at) =>
+        "full" in row ? (
+          <Fragment key={at}>
+            {lineRow(row.full)}
+            {below(row.full)}
+          </Fragment>
+        ) : (
+          <Fragment key={at}>
+            <View style={{ flexDirection: "row" }}>
+              <View
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  borderRightWidth: 1,
+                  borderRightColor: theme.colors.border,
+                }}
+              >
+                {row.left !== null ? lineRow(row.left, "old") : blank}
+              </View>
+              <View style={{ flex: 1, flexDirection: "row" }}>
+                {row.right !== null ? lineRow(row.right, "new") : blank}
+              </View>
+            </View>
+            {row.left !== null ? below(row.left) : null}
+            {row.right !== null && row.right !== row.left ? below(row.right) : null}
+          </Fragment>
+        ),
+      )
+    : lines.map((_line, index) => (
+        <Fragment key={index}>
+          {lineRow(index)}
+          {below(index)}
+        </Fragment>
+      ));
 
   return (
     <View style={styles.card}>
@@ -309,7 +640,10 @@ export function FileDiff({
       >
         <Text style={styles.small}>{expanded ? "▾" : "▸"}</Text>
         <View style={{ flex: 1, flexDirection: "row", alignItems: "baseline", gap: 8, minWidth: 0 }}>
-          <Text style={[styles.text, { fontFamily: MONO, fontSize: 12, fontWeight: "600", flexShrink: 0 }]} numberOfLines={1}>
+          <Text
+            style={[styles.text, { fontFamily: MONO, fontSize: 12, fontWeight: "600", flexShrink: 0 }]}
+            numberOfLines={1}
+          >
             {title.split("/").pop()}
           </Text>
           <Text style={[styles.small, { fontFamily: MONO, flexShrink: 1 }]} numberOfLines={1}>
@@ -317,10 +651,13 @@ export function FileDiff({
           </Text>
         </View>
         {file.newFile ? <Text style={[styles.small, { color: theme.colors.statusSuccess }]}>new</Text> : null}
-        {file.deletedFile ? <Text style={[styles.small, { color: theme.colors.statusDanger }]}>deleted</Text> : null}
+        {file.deletedFile ? (
+          <Text style={[styles.small, { color: theme.colors.statusDanger }]}>deleted</Text>
+        ) : null}
         {threads.length > 0 ? <Text style={styles.small}>💬 {threads.length}</Text> : null}
         <Text style={[styles.small, { color: theme.colors.statusSuccess }]}>+{file.additions}</Text>
         <Text style={[styles.small, { color: theme.colors.statusDanger }]}>−{file.deletions}</Text>
+        {viewed ? <ViewedBox checked={viewed.value} onChange={viewed.onChange} ui={ui} /> : null}
       </Pressable>
       {expanded ? (
         <>
@@ -330,7 +667,7 @@ export function FileDiff({
               <Text style={styles.muted}>This diff is too large to show here.</Text>
               <Button
                 label="Open the changes in GitLab"
-                onPress={() => void openExternalUrl(`${detail.webUrl}/diffs`)}
+                onPress={() => void openExternalUrl(changesUrl)}
                 styles={styles}
                 theme={theme}
               />
@@ -341,74 +678,25 @@ export function FileDiff({
               scrollEnabled={!wrap}
               onLayout={(event) => setVisibleWidth(event.nativeEvent.layout.width)}
             >
-              <View style={{ paddingVertical: 4, minWidth: wrap ? undefined : visibleWidth || undefined, flex: wrap ? 1 : undefined }}>
-              {file.lines.map((line, index) => {
-                const here = threads.filter((discussion) => anchoredAt(discussion, line));
-                const waiting = pending.filter((comment) => endsAt(comment, line));
-                here.forEach((discussion) => placed.add(discussion.id));
-                const { primary, others } = index === high ? composerActions() : { primary: null, others: [] };
-                return (
-                  <Fragment key={index}>
-                    <LineRow
-                      line={line}
-                      wrap={wrap}
-                      tokens={highlighted[index] ?? []}
-                      selected={index >= low && index <= high && line.kind !== "hunk"}
-                      onPress={canComment && line.kind !== "hunk" ? () => pick(index) : undefined}
-                      ui={ui}
-                    />
-                    {here.map((discussion) => (
-                      <View key={discussion.id} style={[{ padding: 8 }, pinned]}>
-                        <Thread discussion={discussion} actions={actions} ui={ui} />
-                      </View>
-                    ))}
-                    {handlers.stack
-                      ? waiting.map((comment) => (
-                          <View key={comment.id} style={pinned}>
-                            <PendingNote
-                              comment={comment}
-                              viewer={viewer}
-                              onEdit={(body) => handlers.stack!.edit(comment.id, body)}
-                              onRemove={() => handlers.stack!.remove(comment.id)}
-                              ui={ui}
-                            />
-                          </View>
-                        ))
-                      : null}
-                    {primary && selectedLines.length > 0 ? (
-                      <View style={[{ padding: 8, gap: 6 }, pinned]}>
-                        <Text style={styles.small}>
-                          Comment on {rangeLabel(selectedLines)} · click another line to select a range
-                        </Text>
-                        <Composer
-                          key={`${low}-${high}`}
-                          placeholder="Write a comment…"
-                          sendLabel={primary.label}
-                          autoFocus
-                          onSend={primary.onSend}
-                          others={others}
-                          templates={
-                            detail.canPush && selectedLines.some((line) => line.kind !== "removed")
-                              ? [{ label: "Suggest change", text: suggestionFor(selectedLines) }]
-                              : []
-                          }
-                          onCancel={() => setSelection(null)}
-                          ui={ui}
-                        />
-                      </View>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-              {threads
-                    .filter((discussion) => !placed.has(discussion.id))
-                    .map((discussion) => (
-                      // Anchored to a line outside the shown hunks, or to an older version of the file.
-                      <View key={discussion.id} style={[{ padding: 8, gap: 4 }, pinned]}>
-                        <Text style={styles.small}>On a line not in this diff</Text>
-                        <Thread discussion={discussion} actions={actions} ui={ui} />
-                      </View>
-                    ))}
+              <View
+                style={{
+                  paddingVertical: 4,
+                  minWidth: wrap ? undefined : visibleWidth || undefined,
+                  flex: wrap ? 1 : undefined,
+                }}
+              >
+                {body}
+                {actions
+                  ? threads
+                      .filter((discussion) => !placed.has(discussion.id))
+                      .map((discussion) => (
+                        // Anchored to a line outside the shown hunks, or to an older version of the file.
+                        <View key={discussion.id} style={[{ padding: 8, gap: 4 }, pinned]}>
+                          <Text style={styles.small}>On a line not in this diff</Text>
+                          <Thread discussion={discussion} actions={actions} ui={ui} />
+                        </View>
+                      ))
+                  : null}
               </View>
             </ScrollView>
           )}
@@ -439,6 +727,7 @@ export function ChangesView({
   const readDetail = useRpc(detailRpc);
   const readDiffs = useRpc(diffsRpc);
   const addCodeComment = useRpc(addCodeCommentRpc);
+  const readFileLines = useRpc(fileLinesRpc);
   const queryClient = useQueryClient();
   const write = useWrite(itemRef);
   const detail = useQuery({ queryKey: detailKey(itemRef), queryFn: () => readDetail(itemRef) });
@@ -453,7 +742,9 @@ export function ChangesView({
   // Open the file a thread pointed at, or everything when the MR is small.
   const initiallyOpen = useMemo(() => {
     if (focusPath) {
-      return new Set(files.filter((file) => file.newPath === focusPath || file.oldPath === focusPath).map(fileKey));
+      return new Set(
+        files.filter((file) => file.newPath === focusPath || file.oldPath === focusPath).map(fileKey),
+      );
     }
     return files.length <= 3 ? new Set(files.map(fileKey)) : new Set<string>();
   }, [files, focusPath]);
@@ -498,7 +789,13 @@ export function ChangesView({
       if (!diffRefs || !first || !last) {
         return Promise.reject(new Error("GitLab did not report the commits this MR compares."));
       }
-      const pick = ({ kind, oldLine, newLine, oldPos, newPos }: DiffLine) => ({ kind, oldLine, newLine, oldPos, newPos });
+      const pick = ({ kind, oldLine, newLine, oldPos, newPos }: DiffLine) => ({
+        kind,
+        oldLine,
+        newLine,
+        oldPos,
+        newPos,
+      });
       return write(async () => {
         await addCodeComment({
           projectPath: itemRef.projectPath,
@@ -518,6 +815,15 @@ export function ChangesView({
     },
   };
 
+  const headSha = data.diffRefs?.headSha;
+  const loadFile = (file: DiffFile) =>
+    headSha && !file.deletedFile
+      ? () =>
+          readFileLines({ projectPath: itemRef.projectPath, path: file.newPath, ref: headSha }).then(
+            (result) => result.lines,
+          )
+      : undefined;
+
   const refresh = () => {
     void detail.refetch();
     void diffs.refetch();
@@ -528,7 +834,9 @@ export function ChangesView({
       <View style={{ gap: 12 }}>
         {header ?? (
           <View style={styles.row}>
-            {onBack ? <IconButton icon="ChevronLeft" label="Back" onPress={onBack} theme={theme} styles={styles} /> : null}
+            {onBack ? (
+              <IconButton icon="ChevronLeft" label="Back" onPress={onBack} theme={theme} styles={styles} />
+            ) : null}
             <Text style={styles.muted} numberOfLines={1}>
               {data.reference} · {files.length} files
             </Text>
@@ -536,7 +844,13 @@ export function ChangesView({
             <Text style={[styles.small, { color: theme.colors.statusDanger }]}>−{deletions}</Text>
             <View style={styles.spacer} />
             {onOpenWide ? (
-              <IconButton icon="Maximize2" label="Open in the main area" onPress={onOpenWide} theme={theme} styles={styles} />
+              <IconButton
+                icon="Maximize2"
+                label="Open in the main area"
+                onPress={onOpenWide}
+                theme={theme}
+                styles={styles}
+              />
             ) : null}
             <IconButton
               icon="RefreshCw"
@@ -557,14 +871,19 @@ export function ChangesView({
         )}
         <ReviewBar detail={data} write={write} ui={ui} />
         <Text style={styles.small}>
-          {files.length} files · +{additions} −{deletions} · click a line to comment, then another to select a range
+          {files.length} files · +{additions} −{deletions} · click a line to comment, then another to select a
+          range
         </Text>
         {diffs.data.truncated ? <Text style={styles.small}>Only the first 500 files are shown.</Text> : null}
         {files.map((file) => (
           <FileDiff
             key={fileKey(file)}
             file={file}
-            detail={data}
+            threads={data.discussions}
+            changesUrl={`${data.webUrl}/diffs`}
+            canComment={data.canComment && data.diffRefs != null}
+            canSuggest={data.canPush}
+            loadFile={loadFile(file)}
             expanded={isOpen(file)}
             onToggle={() =>
               setExpanded((current) => {

@@ -65,7 +65,15 @@ function avatarSource(person: Person | null, host: string): string | null {
 }
 
 /** The person's GitLab avatar, or their initials when there is none or it fails to load. */
-export function Avatar({ person, styles, size = 20 }: { person: Person | null; styles: Styles; size?: number }) {
+export function Avatar({
+  person,
+  styles,
+  size = 20,
+}: {
+  person: Person | null;
+  styles: Styles;
+  size?: number;
+}) {
   const host = useContext(HostContext);
   const [failed, setFailed] = useState(false);
   const source = avatarSource(person, host);
@@ -82,7 +90,9 @@ export function Avatar({ person, styles, size = 20 }: { person: Person | null; s
   }
   return (
     <View style={[styles.avatar, frame]}>
-      <Text style={[styles.avatarLabel, { fontSize: Math.max(8, size * 0.45) }]}>{initials(person?.name ?? "?")}</Text>
+      <Text style={[styles.avatarLabel, { fontSize: Math.max(8, size * 0.45) }]}>
+        {initials(person?.name ?? "?")}
+      </Text>
     </View>
   );
 }
@@ -100,7 +110,9 @@ export function AvatarStack({ people, styles, max = 4 }: { people: Person[]; sty
           <Avatar person={person} styles={styles} size={18} />
         </View>
       ))}
-      {people.length > max ? <Text style={[styles.small, { marginLeft: 4 }]}>+{people.length - max}</Text> : null}
+      {people.length > max ? (
+        <Text style={[styles.small, { marginLeft: 4 }]}>+{people.length - max}</Text>
+      ) : null}
     </View>
   );
 }

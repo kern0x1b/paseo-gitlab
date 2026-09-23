@@ -32,7 +32,8 @@ export function badgeFor(lists: Lists | null): Badge {
     failed ? `${failed} failed ${failed === 1 ? "pipeline" : "pipelines"}` : null,
   ].filter(Boolean);
   const waiting = reviews + todos;
-  const label = [waiting ? String(waiting) : null, failed ? "✕" : null].filter(Boolean).join(" ") || undefined;
+  const label =
+    [waiting ? String(waiting) : null, failed ? "✕" : null].filter(Boolean).join(" ") || undefined;
   return { label, title: parts.length ? `GitLab — ${parts.join(", ")}` : "GitLab" };
 }
 
@@ -116,7 +117,9 @@ export function startHeaderButtons(client: PluginClientContext, icon: string): P
       }
     })
     .catch((error: unknown) => {
-      report(`header buttons: listing workspaces failed: ${error instanceof Error ? error.message : String(error)}`);
+      report(
+        `header buttons: listing workspaces failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     });
 
   void refresh();

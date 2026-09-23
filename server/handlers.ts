@@ -782,6 +782,7 @@ export function createHandlers(deps: AuthDeps) {
         {
           id: string;
           short_id: string;
+          parent_ids?: string[];
           title: string;
           author_name: string;
           created_at: string;
@@ -792,6 +793,7 @@ export function createHandlers(deps: AuthDeps) {
         commits: raw.map((commit) => ({
           sha: commit.id,
           shortSha: commit.short_id,
+          parentSha: commit.parent_ids?.[0] ?? null,
           title: commit.title,
           author: commit.author_name,
           createdAt: commit.created_at,

@@ -94,7 +94,10 @@ export async function restWrite<T>(
 ): Promise<T | null> {
   const response = await fetchImpl(`${connection.host}/api/v4${path}`, {
     method,
-    headers: { ...headers(connection), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+    headers: {
+      ...headers(connection),
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -102,7 +105,12 @@ export async function restWrite<T>(
     let detail = "";
     try {
       const parsed = (await response.json()) as { message?: unknown; error?: unknown };
-      detail = typeof parsed.message === "string" ? parsed.message : typeof parsed.error === "string" ? parsed.error : "";
+      detail =
+        typeof parsed.message === "string"
+          ? parsed.message
+          : typeof parsed.error === "string"
+            ? parsed.error
+            : "";
     } catch {
       // No JSON body to explain it.
     }

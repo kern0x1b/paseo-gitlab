@@ -371,7 +371,12 @@ interface RawNote {
   userPermissions?: { adminNote: boolean } | null;
   awardEmoji?: Nodes<RawAward>;
   suggestions?: Nodes<{ id: string; applied: boolean }>;
-  position?: { filePath: string; newLine: number | null; oldLine: number | null; positionType: string } | null;
+  position?: {
+    filePath: string;
+    newLine: number | null;
+    oldLine: number | null;
+    positionType: string;
+  } | null;
 }
 
 interface RawDiscussion {
@@ -610,12 +615,20 @@ function toJob(job: RawJob, host: string): Job {
       })),
     downstream:
       job.downstreamPipeline && downstreamPath
-        ? { projectPath: downstreamPath, iid: job.downstreamPipeline.iid, status: job.downstreamPipeline.status }
+        ? {
+            projectPath: downstreamPath,
+            iid: job.downstreamPipeline.iid,
+            status: job.downstreamPipeline.status,
+          }
         : null,
   };
 }
 
-export function toPipeline(projectPath: string, raw: NonNullable<NonNullable<RawPipeline["project"]>["pipeline"]>, host: string): Pipeline {
+export function toPipeline(
+  projectPath: string,
+  raw: NonNullable<NonNullable<RawPipeline["project"]>["pipeline"]>,
+  host: string,
+): Pipeline {
   return {
     projectPath,
     iid: raw.iid,
@@ -662,12 +675,17 @@ export interface RawWorkspace {
   } | null;
 }
 
-export function toWorkspaceMergeRequest(raw: RawWorkspace): { mergeRequest: ListItem | null; unresolvedThreads: number } {
+export function toWorkspaceMergeRequest(raw: RawWorkspace): {
+  mergeRequest: ListItem | null;
+  unresolvedThreads: number;
+} {
   const row = nodes(raw.project?.mergeRequests)[0];
   if (!row) {
     return { mergeRequest: null, unresolvedThreads: 0 };
   }
-  const unresolvedThreads = nodes(row.discussions).filter((discussion) => discussion.resolvable && !discussion.resolved).length;
+  const unresolvedThreads = nodes(row.discussions).filter(
+    (discussion) => discussion.resolvable && !discussion.resolved,
+  ).length;
   return { mergeRequest: toListItem("mr", row, []), unresolvedThreads };
 }
 
@@ -686,8 +704,16 @@ export interface RawSearchItems {
 
 export function searchHits(raw: RawSearchItems): ItemRef[] {
   return [
-    ...nodes(raw.project?.mergeRequests).map((row) => ({ kind: "mr" as const, projectPath: projectPathOf(row.reference), iid: row.iid })),
-    ...nodes(raw.issues).map((row) => ({ kind: "issue" as const, projectPath: projectPathOf(row.reference), iid: row.iid })),
+    ...nodes(raw.project?.mergeRequests).map((row) => ({
+      kind: "mr" as const,
+      projectPath: projectPathOf(row.reference),
+      iid: row.iid,
+    })),
+    ...nodes(raw.issues).map((row) => ({
+      kind: "issue" as const,
+      projectPath: projectPathOf(row.reference),
+      iid: row.iid,
+    })),
   ];
 }
 
@@ -697,9 +723,7 @@ export function searchHits(raw: RawSearchItems): ItemRef[] {
  * default project.
  */
 export type ParsedReference =
-  | { kind: "item"; ref: ItemRef }
-  | { kind: "job"; projectPath: string; jobId: string }
-  | null;
+  { kind: "item"; ref: ItemRef } | { kind: "job"; projectPath: string; jobId: string } | null;
 
 export function parseReference(query: string, host: string, defaultProject: string | null): ParsedReference {
   const text = query.trim();
@@ -728,7 +752,10 @@ export function parseReference(query: string, host: string, defaultProject: stri
   if (!projectPath) {
     return null;
   }
-  return { kind: "item", ref: { kind: reference[2] === "!" ? "mr" : "issue", projectPath, iid: reference[3]! } };
+  return {
+    kind: "item",
+    ref: { kind: reference[2] === "!" ? "mr" : "issue", projectPath, iid: reference[3]! },
+  };
 }
 
 export const CREATE_ISSUE_MUTATION = `
@@ -819,8 +846,18 @@ export function searchVariables(query: {
     path: query.projectPath,
     search: query.search.trim() || null,
     // Issues have no "merged" state; asking for it means closed.
-    state: query.state === "all" ? null : query.kind === "issue" && query.state === "merged" ? "closed" : query.state,
-    label: query.label.trim() ? query.label.split(",").map((label) => label.trim()).filter(Boolean) : null,
+    state:
+      query.state === "all"
+        ? null
+        : query.kind === "issue" && query.state === "merged"
+          ? "closed"
+          : query.state,
+    label: query.label.trim()
+      ? query.label
+          .split(",")
+          .map((label) => label.trim())
+          .filter(Boolean)
+      : null,
     author: trim(query.author),
     assignee: assignee ? (query.kind === "issue" ? [assignee] : assignee) : null,
   };
