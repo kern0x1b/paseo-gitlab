@@ -24,6 +24,13 @@ import { draftsKey, ReviewBar } from "./review";
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
 
+/**
+ * Keeps a code line's indentation and breaks it inside the text when it is too
+ * wide. Normal wrapping breaks at the indentation's last space, which leaves the
+ * line number alone on one row and the code on the next.
+ */
+const CODE_WRAP = Platform.OS === "web" ? ({ whiteSpace: "pre-wrap", wordBreak: "break-all" } as object) : null;
+
 export function diffsKey(ref: ItemRef) {
   return ["gitlab", "diffs", ref.projectPath, ref.iid] as const;
 }
@@ -123,7 +130,7 @@ function LineRow({
           <Text style={{ ...cell, width: 16, textAlign: "center", color: theme.colors.foregroundMuted }}>
             {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : ""}
           </Text>
-          <Text selectable style={{ ...cell, flex: 1, color: theme.colors.foreground, paddingRight: 8 }}>
+          <Text selectable style={[{ ...cell, flex: 1, color: theme.colors.foreground, paddingRight: 8 }, CODE_WRAP]}>
             {line.text
               ? tokens.map((token, index) =>
                   palette[token.kind] ? (
@@ -283,9 +290,14 @@ export function FileDiff({
         style={({ pressed }) => [styles.listRow, styles.row, pressed ? styles.listRowPressed : null]}
       >
         <Text style={styles.small}>{expanded ? "▾" : "▸"}</Text>
-        <Text style={[styles.text, { flex: 1, fontFamily: MONO, fontSize: 12 }]} numberOfLines={2}>
-          {title}
-        </Text>
+        <View style={{ flex: 1, flexDirection: "row", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+          <Text style={[styles.text, { fontFamily: MONO, fontSize: 12, fontWeight: "600", flexShrink: 0 }]} numberOfLines={1}>
+            {title.split("/").pop()}
+          </Text>
+          <Text style={[styles.small, { fontFamily: MONO, flexShrink: 1 }]} numberOfLines={1}>
+            {file.renamedFile ? `${file.oldPath} →` : title.split("/").slice(0, -1).join("/")}
+          </Text>
+        </View>
         {file.newFile ? <Text style={[styles.small, { color: theme.colors.statusSuccess }]}>new</Text> : null}
         {file.deletedFile ? <Text style={[styles.small, { color: theme.colors.statusDanger }]}>deleted</Text> : null}
         {threads.length > 0 ? <Text style={styles.small}>💬 {threads.length}</Text> : null}

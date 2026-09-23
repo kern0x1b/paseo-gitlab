@@ -3,7 +3,7 @@ import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useQuery } from "@tanstack/react-query";
 import React, { useMemo, useRef, useState } from "react";
-import { Platform, Pressable, ScrollView as NativeScrollView, Text, View } from "react-native";
+import { PanResponder, Platform, Pressable, ScrollView as NativeScrollView, Text, View } from "react-native";
 import { authStatusRpc, detailRpc, diffsRpc, listsRpc, type DiffFile, type ItemRef } from "../../shared/contract";
 import { setDiffTarget, useDiffTarget } from "../diff-target";
 import { addPendingComment, editPendingComment, removePendingComments, reviewKey, usePendingComments } from "../review-store";
@@ -18,7 +18,56 @@ import { buildTree, type TreeNode } from "./tree";
 import { useStyles, type Styles } from "./styles";
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
-const TREE_WIDTH = 300;
+const TREE_WIDTH = { initial: 300, min: 180, max: 640 };
+const TREE_WIDTH_KEY = "paseo-gitlab:tree-width";
+const DETAIL_REFRESH_MS = 30_000;
+
+function storedTreeWidth(): number {
+  const raw = Number(globalThis.localStorage?.getItem(TREE_WIDTH_KEY));
+  return Number.isFinite(raw) && raw >= TREE_WIDTH.min && raw <= TREE_WIDTH.max ? raw : TREE_WIDTH.initial;
+}
+
+/** A thin handle between the tree and the diff; drag it to make the tree wider or narrower. */
+function Splitter({ width, onChange, ui }: { width: number; onChange: (width: number) => void; ui: Ui }) {
+  const start = useRef(width);
+  const [dragging, setDragging] = useState(false);
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          start.current = width;
+          setDragging(true);
+        },
+        onPanResponderMove: (_event, gesture) =>
+          onChange(Math.min(TREE_WIDTH.max, Math.max(TREE_WIDTH.min, start.current + gesture.dx))),
+        onPanResponderRelease: () => setDragging(false),
+        onPanResponderTerminate: () => setDragging(false),
+      }),
+    [width, onChange],
+  );
+  return (
+    <View
+      {...responder.panHandlers}
+      accessibilityRole="adjustable"
+      accessibilityLabel="Resize the file tree"
+      style={[
+        { width: 6, marginLeft: -3, marginRight: -3, zIndex: 2 },
+        Platform.OS === "web" ? ({ cursor: "col-resize" } as object) : null,
+      ]}
+    >
+      <View
+        style={{
+          width: dragging ? 2 : 1,
+          alignSelf: "center",
+          flex: 1,
+          backgroundColor: dragging ? ui.theme.colors.accent : ui.theme.colors.border,
+        }}
+      />
+    </View>
+  );
+}
 
 function Counts({ file, styles, ui }: { file: DiffFile; styles: Styles; ui: Ui }) {
   return (
@@ -30,8 +79,9 @@ function Counts({ file, styles, ui }: { file: DiffFile; styles: Styles; ui: Ui }
 }
 
 /** The changed files, as GitLab's file browser shows them: a folder tree or a flat list, with a filter. */
-function FileBrowser({ files, active, onSelect, pendingByFile, threadsByFile, ui }: {
+function FileBrowser({ files, active, onSelect, pendingByFile, threadsByFile, width, ui }: {
   files: DiffFile[];
+  width: number;
   active: string | null;
   onSelect: (file: DiffFile) => void;
   pendingByFile: Map<string, number>;
@@ -113,7 +163,7 @@ function FileBrowser({ files, active, onSelect, pendingByFile, threadsByFile, ui
   };
 
   return (
-    <View style={{ width: TREE_WIDTH, borderRightWidth: 1, borderRightColor: theme.colors.border }}>
+    <View style={{ width }}>
       <View style={{ padding: 10, gap: 8 }}>
         <View style={styles.row}>
           <Text style={[styles.text, { fontWeight: "600", flex: 1 }]}>Files {files.length}</Text>
@@ -189,7 +239,12 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
   const { styles, theme } = ui;
   const readDetail = useRpc(detailRpc);
   const readDiffs = useRpc(diffsRpc);
-  const detail = useQuery({ queryKey: detailKey(target), queryFn: () => readDetail(target) });
+  // Refreshed so a reviewer's new comments show up under their lines without reopening.
+  const detail = useQuery({
+    queryKey: detailKey(target),
+    queryFn: () => readDetail(target),
+    refetchInterval: DETAIL_REFRESH_MS,
+  });
   const diffs = useQuery({
     queryKey: diffsKey(target),
     queryFn: () => readDiffs({ projectPath: target.projectPath, iid: target.iid }),
@@ -198,6 +253,18 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
   const review = reviewKey(target);
   const pending = usePendingComments(review);
   const [treeOpen, setTreeOpen] = useState(true);
+  const [treeWidth, setTreeWidthState] = useState(storedTreeWidth);
+  const setTreeWidth = useMemo(
+    () => (next: number) => {
+      setTreeWidthState(next);
+      try {
+        globalThis.localStorage?.setItem(TREE_WIDTH_KEY, String(Math.round(next)));
+      } catch {
+        // No storage: the width lasts until the window closes.
+      }
+    },
+    [],
+  );
   const [submitting, setSubmitting] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [active, setActive] = useState<string | null>(null);
@@ -272,7 +339,14 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
         <View
           style={[
             styles.row,
-            { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border, gap: 10 },
+            {
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderBottomWidth: 1,
+              borderBottomColor: theme.colors.border,
+              gap: 10,
+              flexWrap: "wrap",
+            },
           ]}
         >
           <IconButton
@@ -283,10 +357,10 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
             styles={styles}
           />
           <Text style={styles.muted}>{shortReference(data.reference)}</Text>
-          <Text style={[styles.title, { flex: 1 }]} numberOfLines={1}>
+          <Text style={[styles.title, { flex: 1, minWidth: 200 }]} numberOfLines={1}>
             {data.title}
           </Text>
-          <Text style={[styles.small, { fontFamily: MONO }]} numberOfLines={1}>
+          <Text style={[styles.small, { fontFamily: MONO, flexShrink: 1 }]} numberOfLines={1}>
             {data.sourceBranch} → {data.targetBranch}
           </Text>
           <Button label="Other MR" onPress={onPickOther} styles={styles} theme={theme} />
@@ -308,14 +382,18 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
         </View>
         <View style={{ flex: 1, flexDirection: "row" }}>
           {treeOpen ? (
-            <FileBrowser
-              files={files}
-              active={active}
-              onSelect={select}
-              pendingByFile={pendingByFile}
-              threadsByFile={threadsByFile}
-              ui={ui}
-            />
+            <>
+              <FileBrowser
+                files={files}
+                active={active}
+                onSelect={select}
+                pendingByFile={pendingByFile}
+                threadsByFile={threadsByFile}
+                width={treeWidth}
+                ui={ui}
+              />
+              <Splitter width={treeWidth} onChange={setTreeWidth} ui={ui} />
+            </>
           ) : null}
           <ScrollView ref={scroll} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
             <Text style={styles.small}>
