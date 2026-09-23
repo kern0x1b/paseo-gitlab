@@ -14,12 +14,13 @@ import {
   type Pipeline,
   type PipelineRef,
 } from "../../shared/contract";
+import { SendToAgentButton } from "./agent";
 import { Badge, Button, Centered, errorText, IconButton, PipelineDot } from "./common";
 import { formatDuration, humanize, isActive, shortSha, timeAgo } from "./format";
 import { jobLogKey, pipelineKey } from "./queries";
 import type { Styles } from "./styles";
 
-type Ui = { theme: PluginTheme; styles: Styles };
+type Ui = { theme: PluginTheme; styles: Styles; workspaceId: string };
 
 /** Fast while something is moving, slow once it has settled. */
 const ACTIVE_REFRESH_MS = 5_000;
@@ -100,7 +101,7 @@ export function PipelineView({
 }: {
   pipelineRef: PipelineRef;
   onBack: () => void;
-  onOpenLog: (projectPath: string, job: Job) => void;
+  onOpenLog: (projectPath: string, job: Job, pipelineIid: string) => void;
   onOpenPipeline: (ref: PipelineRef) => void;
   ui: Ui;
 }) {
@@ -233,7 +234,7 @@ export function PipelineView({
               <View style={styles.divider} />
               <JobRow
                 job={job}
-                onOpenLog={(target) => onOpenLog(pipeline.projectPath, target)}
+                onOpenLog={(target) => onOpenLog(pipeline.projectPath, target, pipeline.iid)}
                 onOpenPipeline={onOpenPipeline}
                 onAction={(target, action) => jobAction.mutate({ jobId: target.id, action })}
                 busy={jobAction.isPending && jobAction.variables?.jobId === job.id}
@@ -269,11 +270,13 @@ function colorFor(color: LogColor | null, theme: PluginTheme): string {
 export function JobLogView({
   projectPath,
   job,
+  pipelineIid,
   onBack,
   ui,
 }: {
   projectPath: string;
   job: Job;
+  pipelineIid: string | null;
   onBack: () => void;
   ui: Ui;
 }) {
@@ -302,6 +305,13 @@ export function JobLogView({
         <Text style={[styles.text, { flex: 1, fontWeight: "600" }]} numberOfLines={1}>
           {job.name}
         </Text>
+        {job.status === "FAILED" ? (
+          <SendToAgentButton
+            workspaceId={ui.workspaceId}
+            subject={{ job: { projectPath, jobId: job.id, name: job.name, webUrl: job.webUrl, pipelineIid } }}
+            ui={ui}
+          />
+        ) : null}
         <IconButton
           icon="RefreshCw"
           label="Refresh"

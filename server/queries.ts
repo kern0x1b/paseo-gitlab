@@ -547,3 +547,109 @@ export function numericId(globalId: string): string | null {
   const match = globalId.match(/\/(\d+)$/);
   return match?.[1] ?? null;
 }
+
+export const WORKSPACE_QUERY = `
+query PaseoGitLabWorkspace($path: ID!, $branch: String!) {
+  project(fullPath: $path) {
+    repository { rootRef }
+    mergeRequests(sourceBranches: [$branch], state: opened, first: 1) {
+      nodes { ${MR_ROW} discussions(first: 100) { nodes { resolvable resolved } } }
+    }
+  }
+}`;
+
+export interface RawWorkspace {
+  project: {
+    repository: { rootRef: string | null } | null;
+    mergeRequests: Nodes<RawRow & { discussions: Nodes<{ resolvable: boolean; resolved: boolean }> }>;
+  } | null;
+}
+
+export function toWorkspaceMergeRequest(raw: RawWorkspace): { mergeRequest: ListItem | null; unresolvedThreads: number } {
+  const row = nodes(raw.project?.mergeRequests)[0];
+  if (!row) {
+    return { mergeRequest: null, unresolvedThreads: 0 };
+  }
+  const unresolvedThreads = nodes(row.discussions).filter((discussion) => discussion.resolvable && !discussion.resolved).length;
+  return { mergeRequest: toListItem("mr", row, []), unresolvedThreads };
+}
+
+export const SEARCH_ITEMS_QUERY = `
+query PaseoGitLabSearchItems($search: String!, $path: ID!) {
+  issues(search: $search, state: opened, first: 5, sort: UPDATED_DESC) { nodes { iid reference(full: true) } }
+  project(fullPath: $path) {
+    mergeRequests(search: $search, state: opened, first: 5, sort: UPDATED_DESC) { nodes { iid reference(full: true) } }
+  }
+}`;
+
+export interface RawSearchItems {
+  issues: Nodes<{ iid: string; reference: string }>;
+  project: { mergeRequests: Nodes<{ iid: string; reference: string }> } | null;
+}
+
+export function searchHits(raw: RawSearchItems): ItemRef[] {
+  return [
+    ...nodes(raw.project?.mergeRequests).map((row) => ({ kind: "mr" as const, projectPath: projectPathOf(row.reference), iid: row.iid })),
+    ...nodes(raw.issues).map((row) => ({ kind: "issue" as const, projectPath: projectPathOf(row.reference), iid: row.iid })),
+  ];
+}
+
+/**
+ * What a typed reference points at: `!12`, `#34`, `group/project!12`, or a full
+ * issue, MR or job URL on the connected host. Bare numbers resolve against the
+ * default project.
+ */
+export type ParsedReference =
+  | { kind: "item"; ref: ItemRef }
+  | { kind: "job"; projectPath: string; jobId: string }
+  | null;
+
+export function parseReference(query: string, host: string, defaultProject: string | null): ParsedReference {
+  const text = query.trim();
+  try {
+    const url = new URL(text);
+    if (url.origin !== host) {
+      return null;
+    }
+    const match = url.pathname.match(/^\/(.+?)\/-\/(issues|merge_requests|jobs)\/(\d+)/);
+    if (!match) {
+      return null;
+    }
+    const [, projectPath, type, id] = match as unknown as [string, string, string, string];
+    if (type === "jobs") {
+      return { kind: "job", projectPath, jobId: `gid://gitlab/Ci::Build/${id}` };
+    }
+    return { kind: "item", ref: { kind: type === "issues" ? "issue" : "mr", projectPath, iid: id } };
+  } catch {
+    // Not a URL; try a reference.
+  }
+  const reference = text.match(/^([\w./-]+)?([#!])(\d+)$/);
+  if (!reference) {
+    return null;
+  }
+  const projectPath = reference[1] || defaultProject;
+  if (!projectPath) {
+    return null;
+  }
+  return { kind: "item", ref: { kind: reference[2] === "!" ? "mr" : "issue", projectPath, iid: reference[3]! } };
+}
+
+export const CREATE_ISSUE_MUTATION = `
+mutation PaseoGitLabCreateIssue($projectPath: ID!, $title: String!, $description: String) {
+  createIssue(input: { projectPath: $projectPath, title: $title, description: $description }) {
+    issue { iid }
+    errors
+  }
+}`;
+
+export const CREATE_MERGE_REQUEST_MUTATION = `
+mutation PaseoGitLabCreateMergeRequest(
+  $projectPath: ID!, $title: String!, $description: String, $sourceBranch: String!, $targetBranch: String!
+) {
+  mergeRequestCreate(input: {
+    projectPath: $projectPath, title: $title, description: $description, sourceBranch: $sourceBranch, targetBranch: $targetBranch
+  }) {
+    mergeRequest { iid }
+    errors
+  }
+}`;

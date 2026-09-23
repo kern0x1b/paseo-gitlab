@@ -1,4 +1,4 @@
-import { defineRpc } from "@getpaseo/plugin";
+import { defineRpc, PluginAttachmentSearchPayloadSchema } from "@getpaseo/plugin";
 import { z } from "zod";
 
 /**
@@ -408,4 +408,54 @@ export const todoDoneRpc = defineRpc({
   name: "gitlab.todo.done",
   input: z.object({ id: z.string() }),
   output: z.object({ ok: z.literal(true) }),
+});
+
+export const WorkspaceStateSchema = z.object({
+  /** Null when the workspace is not a checkout of a project on the connected GitLab. */
+  checkout: z.object({ branch: z.string(), projectPath: z.string() }).nullable(),
+  defaultBranch: z.string().nullable(),
+  mergeRequest: ListItemSchema.nullable(),
+  unresolvedThreads: z.number(),
+});
+
+export type WorkspaceState = z.output<typeof WorkspaceStateSchema>;
+
+export const workspaceRpc = defineRpc({
+  name: "gitlab.workspace",
+  input: z.object({ directory: z.string() }),
+  output: WorkspaceStateSchema,
+});
+
+export const agentPromptRpc = defineRpc({
+  name: "gitlab.agent.prompt",
+  input: z.union([
+    z.object({ item: ItemRefSchema }),
+    z.object({ job: z.object({ projectPath: z.string(), jobId: z.string(), name: z.string(), webUrl: z.string(), pipelineIid: z.string().nullable() }) }),
+  ]),
+  output: z.object({ title: z.string(), text: z.string() }),
+});
+
+/** Paseo's attachment picker calls this with `{ query }` as you type after `@GitLab`. */
+export const attachmentSearchRpc = defineRpc({
+  name: "gitlab.attachments.search",
+  input: z.object({ query: z.string() }),
+  output: PluginAttachmentSearchPayloadSchema,
+});
+
+export const createIssueRpc = defineRpc({
+  name: "gitlab.issue.create",
+  input: z.object({ projectPath: z.string(), title: z.string().min(1), description: z.string() }),
+  output: ItemRefSchema,
+});
+
+export const createMergeRequestRpc = defineRpc({
+  name: "gitlab.mr.create",
+  input: z.object({
+    projectPath: z.string(),
+    title: z.string().min(1),
+    description: z.string(),
+    sourceBranch: z.string(),
+    targetBranch: z.string(),
+  }),
+  output: ItemRefSchema,
 });

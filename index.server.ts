@@ -3,6 +3,8 @@ import { connect, defaultAuthDeps, disconnect } from "./server/auth";
 import { createHandlers } from "./server/handlers";
 import {
   addDiffNoteRpc,
+  agentPromptRpc,
+  attachmentSearchRpc,
   addNoteRpc,
   deleteNoteRpc,
   diffsRpc,
@@ -12,10 +14,13 @@ import {
   setPeopleRpc,
   updateItemRpc,
   updateNoteRpc,
+  workspaceRpc,
   authConnectRpc,
   authDisconnectRpc,
   authStatusRpc,
   clientLogRpc,
+  createIssueRpc,
+  createMergeRequestRpc,
   detailRpc,
   imageRpc,
   jobActionRpc,
@@ -46,6 +51,11 @@ export default function contribute(server: PluginServerContext) {
   server.handle(searchLabelsRpc, (input) => handlers.searchLabels(input));
   server.handle(diffsRpc, (input) => handlers.diffs(input));
   server.handle(addDiffNoteRpc, (input) => handlers.addDiffNote(input));
+  server.handle(workspaceRpc, (input) => handlers.workspace(input));
+  server.handle(createIssueRpc, (input) => handlers.createIssue(input));
+  server.handle(createMergeRequestRpc, (input) => handlers.createMergeRequest(input));
+  server.handle(agentPromptRpc, (input) => handlers.agentPrompt(input));
+  server.handle(attachmentSearchRpc, (input) => handlers.attachmentSearch(input));
   server.handle(resolveRpc, (input) => handlers.resolve(input));
   server.handle(imageRpc, (input) => handlers.image(input));
   server.handle(pipelineRpc, (input) => handlers.pipeline(input));

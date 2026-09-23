@@ -3,6 +3,7 @@ import { startHeaderButtons } from "./client/header-buttons";
 import { PANEL_ID, SETTINGS_ID, setPluginClient } from "./client/plugin-client";
 import { GitLabPanel } from "./client/ui/panel";
 import { GitLabSettings } from "./client/ui/settings";
+import { attachmentSearchRpc } from "./shared/contract";
 
 const ICON = "GitMerge";
 
@@ -28,6 +29,14 @@ export default function contribute(client: PluginClientContext) {
       onSelect: (context) => context.openPanel(PANEL_ID, { location: "explorer" }),
     }),
     startHeaderButtons(client, ICON),
+    client.addAttachmentSource({
+      id: "gitlab",
+      title: "GitLab",
+      icon: ICON,
+      pickerTitle: "Attach from GitLab",
+      searchPlaceholder: "!123, #45, a GitLab URL, or words",
+      search: attachmentSearchRpc,
+    }),
   ];
   return () => {
     for (const remove of removers) {

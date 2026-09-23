@@ -24,11 +24,12 @@ import { HtmlBody } from "../html/html-body";
 import { htmlToText } from "../html/sanitize";
 import { Avatar, Badge, Button, Centered, errorText, IconButton, Labels, PipelineDot } from "./common";
 import { humanize, mergeStatusLabel, timeAgo } from "./format";
+import { SendToAgentButton } from "./agent";
 import { LabelPicker, PeoplePicker } from "./picker";
 import { DETAIL_REFRESH_MS, detailKey, LISTS_KEY } from "./queries";
 import type { Styles } from "./styles";
 
-export type Ui = { theme: PluginTheme; styles: Styles; host: string };
+export type Ui = { theme: PluginTheme; styles: Styles; host: string; workspaceId: string };
 
 /** What a thread needs to act on its notes; built once per detail. */
 export interface NoteActions {
@@ -450,6 +451,11 @@ function Header({
           {detail.reference}
         </Text>
         <View style={ui.styles.spacer} />
+        <SendToAgentButton
+          workspaceId={ui.workspaceId}
+          subject={{ item: { kind: detail.kind, projectPath: detail.projectPath, iid: detail.iid } }}
+          ui={ui}
+        />
         {onEdit ? (
           <IconButton
             icon="Pencil"
