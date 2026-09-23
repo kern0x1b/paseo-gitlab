@@ -19,28 +19,38 @@ import type {
  * code blocks look the way they do on the site without a markdown renderer here.
  */
 
-const PERSON = "username name";
+const PERSON = "username name avatarUrl";
 const LABELS = "labels { nodes { title color textColor } }";
 const LABELS_WITH_ID = "labels { nodes { id title color textColor } }";
+
+const PEOPLE = `author { ${PERSON} } assignees { nodes { ${PERSON} } }`;
 
 const MR_ROW = `
   iid title webUrl reference(full: true) updatedAt userNotesCount draft detailedMergeStatus
   headPipeline { iid status }
+  ${PEOPLE} reviewers { nodes { ${PERSON} } }
   ${LABELS}`;
 
-const ISSUE_ROW = `iid title webUrl reference(full: true) updatedAt userNotesCount confidential ${LABELS}`;
+const ISSUE_ROW = `iid title webUrl reference(full: true) updatedAt userNotesCount confidential ${PEOPLE} ${LABELS}`;
 
 const LIST_ARGS = "state: opened, first: 50, sort: UPDATED_DESC";
 
 /**
  * Issues and MRs where you are the author or the assignee, the MRs waiting for
- * your review, and your pending to-dos, in one round trip.
+ * your review, and your pending to-dos. Three queries rather than one: with the
+ * people on every row, a single query passes GitLab's complexity limit of 250.
  */
-export const LISTS_QUERY = `
-query PaseoGitLabLists($me: String!) {
+export const LISTS_QUERIES = {
+  mergeRequests: `
+query PaseoGitLabMyMergeRequests {
   currentUser {
     authoredMergeRequests(${LIST_ARGS}) { nodes { ${MR_ROW} } }
     assignedMergeRequests(${LIST_ARGS}) { nodes { ${MR_ROW} } }
+  }
+}`,
+  review: `
+query PaseoGitLabReviewAndTodos {
+  currentUser {
     reviewRequestedMergeRequests(${LIST_ARGS}) { nodes { ${MR_ROW} } }
     todos(state: [pending], first: 50) {
       nodes {
@@ -50,9 +60,13 @@ query PaseoGitLabLists($me: String!) {
       }
     }
   }
+}`,
+  issues: `
+query PaseoGitLabMyIssues($me: String!) {
   assignedIssues: issues(assigneeUsernames: [$me], ${LIST_ARGS}) { nodes { ${ISSUE_ROW} } }
   authoredIssues: issues(authorUsername: $me, ${LIST_ARGS}) { nodes { ${ISSUE_ROW} } }
-}`;
+}`,
+} as const;
 
 const DISCUSSIONS = `
   discussions(first: 100) {
@@ -264,6 +278,9 @@ interface RawRow {
   detailedMergeStatus?: string | null;
   headPipeline?: { iid?: string; status: string } | null;
   labels?: Nodes<RawLabel>;
+  author?: Person | null;
+  assignees?: Nodes<Person>;
+  reviewers?: Nodes<Person>;
 }
 
 interface RawTodo {
@@ -441,6 +458,9 @@ function toListItem(kind: ItemKind, row: RawRow, roles: ListItem["roles"]): List
     pipelineStatus: row.headPipeline?.status ?? null,
     mergeStatus: row.detailedMergeStatus ?? null,
     roles,
+    author: row.author ?? null,
+    assignees: nodes(row.assignees),
+    reviewers: nodes(row.reviewers),
   };
 }
 

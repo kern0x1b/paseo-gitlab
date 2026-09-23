@@ -6,7 +6,7 @@ import React, { useState } from "react";
 import { Text, View } from "react-native";
 import { authStatusRpc, listsRpc, type ItemRef, type Job, type PipelineRef } from "../../shared/contract";
 import { openGitLabSettings } from "../plugin-client";
-import { Button, Centered, errorText, IconButton } from "./common";
+import { Button, Centered, errorText, HostContext, IconButton } from "./common";
 import { ChangesView } from "./changes";
 import { CreateView, type CreateTarget } from "./create";
 import { WorkspaceCard } from "./workspace-card";
@@ -194,8 +194,10 @@ export function GitLabPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.scroll}>
-      {body}
-    </ScrollView>
+    <HostContext.Provider value={status.data?.connected ? status.data.host : ""}>
+      <ScrollView style={styles.screen} contentContainerStyle={styles.scroll}>
+        {body}
+      </ScrollView>
+    </HostContext.Provider>
   );
 }

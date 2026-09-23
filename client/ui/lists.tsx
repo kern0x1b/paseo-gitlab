@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { todoDoneRpc, type ItemRef, type ListItem, type Lists, type Todo } from "../../shared/contract";
-import { Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
+import { AvatarStack, Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
 import { byRole, defaultRoleFilter, ROLE_FILTERS, type RoleFilter } from "./filters";
 import { humanize, mergeStatusLabel, shortReference, timeAgo } from "./format";
 import { LISTS_KEY } from "./queries";
@@ -68,8 +68,48 @@ export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: It
       {mergeStatus && item.mergeStatus !== "DRAFT_STATUS" ? (
         <Text style={styles.small}>{mergeStatus}</Text>
       ) : null}
+      <PeopleLine item={item} styles={styles} />
       <Labels labels={item.labels} styles={styles} />
     </Pressable>
+  );
+}
+
+/** Who wrote it, who has it, and for an MR who reviews it. */
+function PeopleLine({ item, styles }: { item: ListItem; styles: Styles }) {
+  if (!item.author && item.assignees.length === 0 && item.reviewers.length === 0) {
+    return null;
+  }
+  return (
+    <View style={[styles.row, { flexWrap: "wrap", gap: 10 }]}>
+      {item.author ? (
+        <View style={[styles.row, { gap: 4 }]}>
+          <Text style={styles.small}>by</Text>
+          <AvatarStack people={[item.author]} styles={styles} />
+          <Text style={styles.small} numberOfLines={1}>
+            {item.author.name}
+          </Text>
+        </View>
+      ) : null}
+      {item.assignees.length > 0 ? (
+        <View style={[styles.row, { gap: 4 }]}>
+          <Text style={styles.small}>→</Text>
+          <AvatarStack people={item.assignees} styles={styles} />
+          {item.assignees.length === 1 ? (
+            <Text style={styles.small} numberOfLines={1}>
+              {item.assignees[0]!.name}
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        <Text style={styles.small}>→ unassigned</Text>
+      )}
+      {item.kind === "mr" && item.reviewers.length > 0 ? (
+        <View style={[styles.row, { gap: 4 }]}>
+          <Text style={styles.small}>review</Text>
+          <AvatarStack people={item.reviewers} styles={styles} />
+        </View>
+      ) : null}
+    </View>
   );
 }
 

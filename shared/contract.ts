@@ -10,6 +10,8 @@ import { z } from "zod";
 export const PersonSchema = z.object({
   username: z.string(),
   name: z.string(),
+  /** Absolute (gravatar) or relative to the GitLab host (uploaded avatars). */
+  avatarUrl: z.string().nullish(),
 });
 
 export const LabelSchema = z.object({
@@ -40,6 +42,10 @@ export const ListItemSchema = ItemRefSchema.extend({
   mergeStatus: z.string().nullable(),
   /** Why the item is in the list: an issue or MR can be yours as author, as assignee, or both. */
   roles: z.array(z.enum(["author", "assignee"])),
+  author: PersonSchema.nullable(),
+  assignees: z.array(PersonSchema),
+  /** MRs only. */
+  reviewers: z.array(PersonSchema),
 });
 
 /** A GitLab to-do: a mention, an assignment, a review request, a failed pipeline. */

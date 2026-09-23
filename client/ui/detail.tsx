@@ -28,7 +28,18 @@ import {
 } from "../../shared/contract";
 import { HtmlBody } from "../html/html-body";
 import { htmlToText } from "../html/sanitize";
-import { Avatar, Badge, Button, Centered, ConfirmButton, errorText, IconButton, Labels, PipelineDot } from "./common";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Centered,
+  ConfirmButton,
+  errorText,
+  IconButton,
+  Labels,
+  PersonChip,
+  PipelineDot,
+} from "./common";
 import { humanize, mergeStatusLabel, timeAgo } from "./format";
 import { SendToAgentButton } from "./agent";
 import { LabelPicker, PeoplePicker } from "./picker";
@@ -58,8 +69,17 @@ export interface ComposerAction {
   onSend: (body: string) => Promise<unknown>;
 }
 
-function people(list: Person[]): string {
-  return list.map((person) => `@${person.username}`).join(", ");
+function PeopleChips({ people, ui }: { people: Person[]; ui: Ui }) {
+  if (people.length === 0) {
+    return <Text style={ui.styles.metaValue}>None</Text>;
+  }
+  return (
+    <View style={ui.styles.chips}>
+      {people.map((person) => (
+        <PersonChip key={person.username} person={person} styles={ui.styles} />
+      ))}
+    </View>
+  );
 }
 
 function Link({
@@ -793,19 +813,20 @@ export function ItemDetail({
 
       <View style={ui.styles.card}>
         <View style={ui.styles.cardBody}>
-          <EditableRow
-            label="Assignees"
-            value={people(detail.assignees)}
-            onEdit={edit ? () => setPicker("assignees") : undefined}
-            ui={ui}
-          />
+          {detail.author ? (
+            <EditableRow label="Author" ui={ui}>
+              <View style={ui.styles.chips}>
+                <PersonChip person={detail.author} styles={ui.styles} />
+              </View>
+            </EditableRow>
+          ) : null}
+          <EditableRow label="Assignees" onEdit={edit ? () => setPicker("assignees") : undefined} ui={ui}>
+            <PeopleChips people={detail.assignees} ui={ui} />
+          </EditableRow>
           {isMr ? (
-            <EditableRow
-              label="Reviewers"
-              value={people(detail.reviewers)}
-              onEdit={edit ? () => setPicker("reviewers") : undefined}
-              ui={ui}
-            />
+            <EditableRow label="Reviewers" onEdit={edit ? () => setPicker("reviewers") : undefined} ui={ui}>
+              <PeopleChips people={detail.reviewers} ui={ui} />
+            </EditableRow>
           ) : null}
           <EditableRow label="Labels" onEdit={edit ? () => setPicker("labels") : undefined} ui={ui}>
             {detail.labels.length > 0 ? (

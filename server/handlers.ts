@@ -51,7 +51,7 @@ import {
   UPDATE_NOTE_MUTATION,
   ISSUE_QUERY,
   JOB_MUTATIONS,
-  LISTS_QUERY,
+  LISTS_QUERIES,
   MERGE_REQUEST_QUERY,
   numericId,
   PIPELINE_MUTATIONS,
@@ -142,7 +142,21 @@ export function createHandlers(deps: AuthDeps) {
     async lists(): Promise<Lists> {
       const connection = await requireConnection(deps);
       const me = await usernameFor(connection, deps);
-      return toLists(await graphql<RawLists>(connection, LISTS_QUERY, { me }, deps.fetch));
+      const [mine, review, issues] = await Promise.all([
+        graphql<Pick<RawLists, "currentUser">>(connection, LISTS_QUERIES.mergeRequests, {}, deps.fetch),
+        graphql<Pick<RawLists, "currentUser">>(connection, LISTS_QUERIES.review, {}, deps.fetch),
+        graphql<Pick<RawLists, "assignedIssues" | "authoredIssues">>(connection, LISTS_QUERIES.issues, { me }, deps.fetch),
+      ]);
+      return toLists({
+        currentUser: {
+          authoredMergeRequests: mine.currentUser?.authoredMergeRequests,
+          assignedMergeRequests: mine.currentUser?.assignedMergeRequests,
+          reviewRequestedMergeRequests: review.currentUser?.reviewRequestedMergeRequests,
+          todos: review.currentUser?.todos,
+        },
+        assignedIssues: issues.assignedIssues,
+        authoredIssues: issues.authoredIssues,
+      });
     },
 
     async detail(ref: ItemRef): Promise<Detail> {

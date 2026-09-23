@@ -1,7 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
-import React from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import React, { createContext, useContext, useState } from "react";
+import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import type { Label, Person } from "../../shared/contract";
 import { initials, pipelineColor } from "./format";
 import type { Styles } from "./styles";
@@ -48,11 +48,69 @@ export function PipelineDot({
   ) : null;
 }
 
-/** Initials instead of the avatar image: gravatar URLs would leak every page view to a third party. */
-export function Avatar({ person, styles }: { person: Person | null; styles: Styles }) {
+/** The connected GitLab, so relative avatar paths resolve without threading the host everywhere. */
+export const HostContext = createContext<string>("");
+
+function avatarSource(person: Person | null, host: string): string | null {
+  const url = person?.avatarUrl;
+  if (!url) {
+    return null;
+  }
+  try {
+    const resolved = new URL(url, host || undefined);
+    return resolved.protocol === "https:" ? resolved.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The person's GitLab avatar, or their initials when there is none or it fails to load. */
+export function Avatar({ person, styles, size = 20 }: { person: Person | null; styles: Styles; size?: number }) {
+  const host = useContext(HostContext);
+  const [failed, setFailed] = useState(false);
+  const source = avatarSource(person, host);
+  const frame = { width: size, height: size, borderRadius: size / 2 };
+  if (source && !failed) {
+    return (
+      <Image
+        source={{ uri: source }}
+        accessibilityLabel={person?.name ?? "avatar"}
+        onError={() => setFailed(true)}
+        style={[styles.avatar, frame]}
+      />
+    );
+  }
   return (
-    <View style={styles.avatar}>
-      <Text style={styles.avatarLabel}>{initials(person?.name ?? "?")}</Text>
+    <View style={[styles.avatar, frame]}>
+      <Text style={[styles.avatarLabel, { fontSize: Math.max(8, size * 0.45) }]}>{initials(person?.name ?? "?")}</Text>
+    </View>
+  );
+}
+
+/** Overlapping avatars for a row; the names are in the accessibility label and the detail view. */
+export function AvatarStack({ people, styles, max = 4 }: { people: Person[]; styles: Styles; max?: number }) {
+  const shown = people.slice(0, max);
+  return (
+    <View
+      accessibilityLabel={people.map((person) => person.name).join(", ")}
+      style={{ flexDirection: "row", alignItems: "center" }}
+    >
+      {shown.map((person, index) => (
+        <View key={person.username} style={{ marginLeft: index === 0 ? 0 : -6 }}>
+          <Avatar person={person} styles={styles} size={18} />
+        </View>
+      ))}
+      {people.length > max ? <Text style={[styles.small, { marginLeft: 4 }]}>+{people.length - max}</Text> : null}
+    </View>
+  );
+}
+
+/** Avatar and name, for the detail view where there is room to say who. */
+export function PersonChip({ person, styles }: { person: Person; styles: Styles }) {
+  return (
+    <View style={[styles.badge, { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: 2 }]}>
+      <Avatar person={person} styles={styles} size={16} />
+      <Text style={styles.badgeLabel}>{person.name}</Text>
     </View>
   );
 }
