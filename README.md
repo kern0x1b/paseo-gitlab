@@ -1,5 +1,10 @@
 # GitLab for Paseo
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A522-3c873a.svg)](https://nodejs.org)
+[![Tests: node --test](https://img.shields.io/badge/tests-node%20--test-brightgreen.svg)](test)
+[![Code style: Prettier](https://img.shields.io/badge/code%20style-prettier-ff69b4.svg)](https://prettier.io)
+
 A mini GitLab that lives inside [Paseo](https://getpaseo.com). Your to-dos, issues,
 merge requests and review requests in the explorer sidebar; a full merge-request
 review — diff, threads, approvals, pipelines — in the main area; and one button to
@@ -43,7 +48,7 @@ paseo plugin add ./paseo-gitlab
 
 `paseo plugin reload gitlab` picks up local changes without restarting Paseo.
 
-Requires Paseo `>= 0.9.1` (see `paseo-plugin.json`).
+Requires Paseo `>= 0.9.0` (see `paseo-plugin.json`).
 
 ## Connect a GitLab
 
@@ -253,4 +258,9 @@ paseo plugin reload gitlab
   is faked at the `fetch` boundary, which is also how demo mode works.
 
 See [AGENTS.md](AGENTS.md) for the conventions an agent (or a new contributor)
-should follow when changing this repo.
+should follow when changing this repo, and [CONTRIBUTING.md](CONTRIBUTING.md) for
+how to set up, test and open a pull request.
+
+## License
+
+[MIT](LICENSE).
