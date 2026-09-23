@@ -1,4 +1,17 @@
-import type { Detail, Discussion, ItemKind, ItemRef, Job, Label, ListItem, Lists, Person, Pipeline, Todo } from "../shared/contract";
+import type {
+  Detail,
+  Discussion,
+  ItemKind,
+  ItemRef,
+  Job,
+  Label,
+  ListItem,
+  Lists,
+  Person,
+  Pipeline,
+  Reaction,
+  Todo,
+} from "../shared/contract";
 
 /**
  * GraphQL rather than REST: it returns GitLab's own rendered HTML for descriptions
@@ -51,6 +64,8 @@ const DISCUSSIONS = `
           author { ${PERSON} }
           userPermissions { adminNote }
           position { filePath newLine oldLine positionType }
+          awardEmoji { nodes { name emoji user { username } } }
+          suggestions { nodes { id applied } }
         }
       }
     }
@@ -77,8 +92,13 @@ query PaseoGitLabMergeRequest($path: ID!, $iid: String!) {
     mergeRequest(iid: $iid) {
       id iid title state webUrl reference(full: true) createdAt description descriptionHtml draft
       sourceBranch targetBranch detailedMergeStatus approved
-      userPermissions { canEdit: updateMergeRequest canComment: createNote }
+      userPermissions {
+        canEdit: updateMergeRequest canComment: createNote canApprove canMerge canPush: pushToSourceBranch
+      }
       diffRefs { baseSha headSha startSha }
+      approvedBy { nodes { username } }
+      mergeable autoMergeEnabled availableAutoMergeStrategies shouldBeRebased rebaseInProgress
+      awardEmoji { nodes { name emoji user { username } } }
       headPipeline { iid status }
       author { ${PERSON} }
       assignees { nodes { ${PERSON} } }
@@ -303,6 +323,25 @@ export interface RawPipeline {
   } | null;
 }
 
+interface RawAward {
+  name: string;
+  emoji: string;
+  user: { username: string } | null;
+}
+
+/** GitLab lists one award per user; the UI wants one chip per emoji with its people. */
+export function toReactions(connection: Nodes<RawAward>): Reaction[] {
+  const byName = new Map<string, Reaction>();
+  for (const award of nodes(connection)) {
+    const reaction = byName.get(award.name) ?? { name: award.name, emoji: award.emoji, users: [] };
+    if (award.user) {
+      reaction.users.push(award.user.username);
+    }
+    byName.set(award.name, reaction);
+  }
+  return [...byName.values()];
+}
+
 interface RawNote {
   id: string;
   body?: string | null;
@@ -311,6 +350,8 @@ interface RawNote {
   createdAt: string;
   author: Person | null;
   userPermissions?: { adminNote: boolean } | null;
+  awardEmoji?: Nodes<RawAward>;
+  suggestions?: Nodes<{ id: string; applied: boolean }>;
   position?: { filePath: string; newLine: number | null; oldLine: number | null; positionType: string } | null;
 }
 
@@ -331,7 +372,20 @@ export interface RawDetail {
   createdAt: string;
   description?: string | null;
   descriptionHtml: string | null;
-  userPermissions?: { canEdit: boolean; canComment: boolean } | null;
+  userPermissions?: {
+    canEdit: boolean;
+    canComment: boolean;
+    canApprove?: boolean;
+    canMerge?: boolean;
+    canPush?: boolean;
+  } | null;
+  approvedBy?: Nodes<{ username: string }>;
+  mergeable?: boolean | null;
+  autoMergeEnabled?: boolean | null;
+  availableAutoMergeStrategies?: string[] | null;
+  shouldBeRebased?: boolean | null;
+  rebaseInProgress?: boolean | null;
+  awardEmoji?: Nodes<RawAward>;
   diffRefs?: { baseSha: string; headSha: string; startSha: string } | null;
   draft?: boolean | null;
   sourceBranch?: string | null;
@@ -461,12 +515,25 @@ function toDiscussion(raw: RawDiscussion): Discussion {
         note.position && note.position.positionType === "text"
           ? { path: note.position.filePath, newLine: note.position.newLine, oldLine: note.position.oldLine }
           : null,
+      reactions: toReactions(note.awardEmoji),
+      suggestions: nodes(note.suggestions).map(({ id, applied }) => ({ id, applied })),
     })),
   };
 }
 
-export function toDetail(kind: ItemKind, raw: RawDetail): Detail {
+export function toDetail(kind: ItemKind, raw: RawDetail, viewer: string): Detail {
   return {
+    viewer,
+    approvedBy: nodes(raw.approvedBy).map((user) => user.username),
+    canApprove: raw.userPermissions?.canApprove ?? false,
+    canMerge: raw.userPermissions?.canMerge ?? false,
+    canPush: raw.userPermissions?.canPush ?? false,
+    mergeable: raw.mergeable ?? false,
+    autoMergeEnabled: raw.autoMergeEnabled ?? false,
+    autoMergeStrategies: raw.availableAutoMergeStrategies ?? [],
+    shouldBeRebased: raw.shouldBeRebased ?? false,
+    rebaseInProgress: raw.rebaseInProgress ?? false,
+    reactions: toReactions(raw.awardEmoji),
     kind,
     id: raw.id,
     canEdit: raw.userPermissions?.canEdit ?? false,
@@ -652,4 +719,14 @@ mutation PaseoGitLabCreateMergeRequest(
     mergeRequest { iid }
     errors
   }
+}`;
+
+export const MERGE_MUTATION = `
+mutation PaseoGitLabMerge($projectPath: ID!, $iid: String!, $sha: String!, $strategy: MergeStrategyEnum) {
+  mergeRequestAccept(input: { projectPath: $projectPath, iid: $iid, sha: $sha, strategy: $strategy }) { ${MUTATION_RESULT} }
+}`;
+
+export const TOGGLE_REACTION_MUTATION = `
+mutation PaseoGitLabToggleReaction($awardableId: AwardableID!, $name: String!) {
+  awardEmojiToggle(input: { awardableId: $awardableId, name: $name }) { ${MUTATION_RESULT} }
 }`;

@@ -5,12 +5,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
+  addDraftRpc,
   addNoteRpc,
+  applySuggestionRpc,
   deleteNoteRpc,
   detailRpc,
   resolveRpc,
   setLabelsRpc,
   setPeopleRpc,
+  toggleReactionRpc,
   updateItemRpc,
   updateNoteRpc,
   type Detail,
@@ -26,6 +29,7 @@ import { Avatar, Badge, Button, Centered, errorText, IconButton, Labels, Pipelin
 import { humanize, mergeStatusLabel, timeAgo } from "./format";
 import { SendToAgentButton } from "./agent";
 import { LabelPicker, PeoplePicker } from "./picker";
+import { draftsKey, MergePanel, Reactions, ReviewBar } from "./review";
 import { DETAIL_REFRESH_MS, detailKey, LISTS_KEY } from "./queries";
 import type { Styles } from "./styles";
 
@@ -37,6 +41,18 @@ export interface NoteActions {
   resolve: (discussionId: string, resolve: boolean) => Promise<unknown>;
   edit: (noteId: string, body: string) => Promise<unknown>;
   remove: (noteId: string) => Promise<unknown>;
+  react: (awardableId: string, name: string) => Promise<unknown>;
+  viewer: string;
+  /** Only when you can push to the source branch, which applying commits to. */
+  applySuggestion?: (suggestionId: string) => Promise<unknown>;
+  /** MRs only: the reply goes into your pending review instead of out at once. */
+  draftReply?: (discussionId: string, body: string) => Promise<unknown>;
+}
+
+/** An extra send action next to the primary one, like "Start thread" or "Add to review". */
+export interface ComposerAction {
+  label: string;
+  onSend: (body: string) => Promise<unknown>;
 }
 
 function people(list: Person[]): string {
@@ -73,7 +89,8 @@ export function Composer({
   placeholder,
   sendLabel,
   onSend,
-  secondary,
+  others = [],
+  templates = [],
   onCancel,
   initialValue = "",
   autoFocus,
@@ -82,17 +99,19 @@ export function Composer({
   placeholder: string;
   sendLabel: string;
   onSend: (body: string) => Promise<unknown>;
-  secondary?: { label: string; onSend: (body: string) => Promise<unknown> };
+  others?: ComposerAction[];
+  /** Snippets to insert, like a suggestion block pre-filled with the line. */
+  templates?: { label: string; text: string }[];
   onCancel?: () => void;
   initialValue?: string;
   autoFocus?: boolean;
   ui: Ui;
 }) {
   const [body, setBody] = useState(initialValue);
-  const [sending, setSending] = useState<"primary" | "secondary" | null>(null);
-  const send = async (which: "primary" | "secondary") => {
+  const [sending, setSending] = useState<string | null>(null);
+  const send = async (which: string) => {
     const text = body.trim();
-    const action = which === "primary" ? onSend : secondary?.onSend;
+    const action = which === "primary" ? onSend : others.find((other) => other.label === which)?.onSend;
     if (!text || sending || !action) {
       return;
     }
@@ -124,24 +143,35 @@ export function Composer({
           }
         }}
       />
-      <View style={ui.styles.row}>
+      <View style={[ui.styles.row, { flexWrap: "wrap" }]}>
         <View style={ui.styles.spacer} />
         {onCancel ? <Button label="Cancel" onPress={onCancel} styles={ui.styles} theme={ui.theme} /> : null}
-        {secondary ? (
+        {templates.map((template) => (
           <Button
-            label={secondary.label}
-            busy={sending === "secondary"}
-            disabled={!body.trim() || sending === "primary"}
-            onPress={() => void send("secondary")}
+            key={template.label}
+            label={template.label}
+            disabled={sending !== null}
+            onPress={() => setBody((current) => (current ? `${current}\n${template.text}` : template.text))}
             styles={ui.styles}
             theme={ui.theme}
           />
-        ) : null}
+        ))}
+        {others.map((other) => (
+          <Button
+            key={other.label}
+            label={other.label}
+            busy={sending === other.label}
+            disabled={!body.trim() || (sending !== null && sending !== other.label)}
+            onPress={() => void send(other.label)}
+            styles={ui.styles}
+            theme={ui.theme}
+          />
+        ))}
         <Button
           label={sendLabel}
           primary
           busy={sending === "primary"}
-          disabled={!body.trim() || sending === "secondary"}
+          disabled={!body.trim() || (sending !== null && sending !== "primary")}
           onPress={() => void send("primary")}
           styles={ui.styles}
           theme={ui.theme}
@@ -210,7 +240,44 @@ export function NoteView({ note, actions, ui }: { note: Note; actions: NoteActio
       ) : (
         <HtmlBody html={note.bodyHtml} host={ui.host} theme={ui.theme} />
       )}
+      {!editing && note.suggestions.length > 0 ? (
+        <View style={[ui.styles.row, { flexWrap: "wrap" }]}>
+          {note.suggestions.map((suggestion, index) =>
+            suggestion.applied ? (
+              <Badge key={suggestion.id} label="Suggestion applied" styles={ui.styles} color={ui.theme.colors.statusSuccess} />
+            ) : actions.applySuggestion ? (
+              <ApplySuggestion
+                key={suggestion.id}
+                label={note.suggestions.length > 1 ? `Apply suggestion ${index + 1}` : "Apply suggestion"}
+                onApply={() => actions.applySuggestion!(suggestion.id)}
+                ui={ui}
+              />
+            ) : null,
+          )}
+        </View>
+      ) : null}
+      {!editing && !note.system ? (
+        <Reactions reactions={note.reactions} viewer={actions.viewer} onToggle={(name) => actions.react(note.id, name)} ui={ui} />
+      ) : null}
     </View>
+  );
+}
+
+function ApplySuggestion({ label, onApply, ui }: { label: string; onApply: () => Promise<unknown>; ui: Ui }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      label={label}
+      busy={busy}
+      onPress={() => {
+        setBusy(true);
+        void onApply()
+          .catch(() => {})
+          .finally(() => setBusy(false));
+      }}
+      styles={ui.styles}
+      theme={ui.theme}
+    />
   );
 }
 
@@ -311,6 +378,19 @@ export function Thread({
               setReplying(false);
               setExpanded(true);
             }}
+            others={
+              actions.draftReply
+                ? [
+                    {
+                      label: "Add to review",
+                      onSend: async (body) => {
+                        await actions.draftReply!(discussion.id, body);
+                        setReplying(false);
+                      },
+                    },
+                  ]
+                : []
+            }
             onCancel={() => setReplying(false)}
             ui={ui}
           />
@@ -516,18 +596,33 @@ export function useWrite(itemRef: ItemRef): (work: () => Promise<unknown>) => Pr
 }
 
 /** Note mutations, shared by the detail and the changes view. */
-export function useNoteActions(itemRef: ItemRef, noteableId: string | undefined): NoteActions {
+export function useNoteActions(itemRef: ItemRef, detail: Detail | undefined): NoteActions {
   const addNote = useRpc(addNoteRpc);
   const updateNote = useRpc(updateNoteRpc);
   const deleteNote = useRpc(deleteNoteRpc);
   const resolve = useRpc(resolveRpc);
+  const toggleReaction = useRpc(toggleReactionRpc);
+  const applySuggestion = useRpc(applySuggestionRpc);
+  const addDraft = useRpc(addDraftRpc);
+  const queryClient = useQueryClient();
   const write = useWrite(itemRef);
+  const isMr = itemRef.kind === "mr";
   return {
+    viewer: detail?.viewer ?? "",
     reply: (discussionId, body) =>
-      write(() => addNote({ noteableId: noteableId ?? "", body, discussionId, mode: "comment" })),
+      write(() => addNote({ noteableId: detail?.id ?? "", body, discussionId, mode: "comment" })),
     resolve: (discussionId, value) => write(() => resolve({ discussionId, resolve: value })),
     edit: (id, body) => write(() => updateNote({ id, body })),
     remove: (id) => write(() => deleteNote({ id })),
+    react: (awardableId, name) => write(() => toggleReaction({ awardableId, name })),
+    applySuggestion: detail?.canPush ? (id) => write(() => applySuggestion({ id })) : undefined,
+    draftReply: isMr
+      ? (discussionId, body) =>
+          write(async () => {
+            await addDraft({ projectPath: itemRef.projectPath, iid: itemRef.iid, body, discussionId });
+            await queryClient.invalidateQueries({ queryKey: draftsKey(itemRef.projectPath, itemRef.iid) });
+          })
+      : undefined,
   };
 }
 
@@ -560,7 +655,9 @@ export function ItemDetail({
     queryFn: () => readDetail(itemRef),
     refetchInterval: DETAIL_REFRESH_MS,
   });
-  const actions = useNoteActions(itemRef, query.data?.id);
+  const actions = useNoteActions(itemRef, query.data);
+  const addDraft = useRpc(addDraftRpc);
+  const queryClient = useQueryClient();
 
   if (query.isPending) {
     return (
@@ -610,6 +707,9 @@ export function ItemDetail({
         refreshing={query.isFetching}
         ui={ui}
       />
+
+      <ReviewBar detail={detail} write={write} ui={ui} />
+      <MergePanel detail={detail} write={write} ui={ui} />
 
       {editing ? (
         <EditForm
@@ -716,6 +816,14 @@ export function ItemDetail({
             ) : (
               <Text style={ui.styles.muted}>No description.</Text>
             )}
+            {isMr ? (
+              <Reactions
+                reactions={detail.reactions}
+                viewer={detail.viewer}
+                onToggle={(name) => actions.react(detail.id, name)}
+                ui={ui}
+              />
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -756,10 +864,24 @@ export function ItemDetail({
               placeholder="Write a comment…"
               sendLabel="Comment"
               onSend={(body) => write(() => addNote({ noteableId: detail.id, body, mode: "comment" }))}
-              secondary={{
-                label: "Start thread",
-                onSend: (body) => write(() => addNote({ noteableId: detail.id, body, mode: "thread" })),
-              }}
+              others={[
+                {
+                  label: "Start thread",
+                  onSend: (body) => write(() => addNote({ noteableId: detail.id, body, mode: "thread" })),
+                },
+                ...(isMr
+                  ? [
+                      {
+                        label: "Add to review",
+                        onSend: (body: string) =>
+                          write(async () => {
+                            await addDraft({ projectPath: detail.projectPath, iid: detail.iid, body });
+                            await queryClient.invalidateQueries({ queryKey: draftsKey(detail.projectPath, detail.iid) });
+                          }),
+                      },
+                    ]
+                  : []),
+              ]}
               ui={ui}
             />
           </View>

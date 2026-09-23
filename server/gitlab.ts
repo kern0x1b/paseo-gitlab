@@ -83,3 +83,32 @@ export function assertNoMutationErrors(
     throw new GitLabError(payload.errors.join("; "));
   }
 }
+
+/** A REST write. Answers with the parsed body, or null for an empty one (204, or an empty 201). */
+export async function restWrite<T>(
+  connection: Connection,
+  method: "POST" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+  fetchImpl: Fetch = fetch,
+): Promise<T | null> {
+  const response = await fetchImpl(`${connection.host}/api/v4${path}`, {
+    method,
+    headers: { ...headers(connection), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const parsed = (await response.json()) as { message?: unknown; error?: unknown };
+      detail = typeof parsed.message === "string" ? parsed.message : typeof parsed.error === "string" ? parsed.error : "";
+    } catch {
+      // No JSON body to explain it.
+    }
+    const error = httpError(response.status);
+    throw detail ? new GitLabError(`${error.message} ${detail}`, response.status) : error;
+  }
+  const text = await response.text();
+  return text ? (JSON.parse(text) as T) : null;
+}

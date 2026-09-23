@@ -5,7 +5,14 @@ import {
   addDiffNoteRpc,
   agentPromptRpc,
   attachmentSearchRpc,
+  addDraftRpc,
   addNoteRpc,
+  applySuggestionRpc,
+  deleteDraftRpc,
+  draftsRpc,
+  mergeRequestActionRpc,
+  submitReviewRpc,
+  toggleReactionRpc,
   deleteNoteRpc,
   diffsRpc,
   searchLabelsRpc,
@@ -52,6 +59,13 @@ export default function contribute(server: PluginServerContext) {
   server.handle(diffsRpc, (input) => handlers.diffs(input));
   server.handle(addDiffNoteRpc, (input) => handlers.addDiffNote(input));
   server.handle(workspaceRpc, (input) => handlers.workspace(input));
+  server.handle(mergeRequestActionRpc, (input) => handlers.mergeRequestAction(input));
+  server.handle(applySuggestionRpc, (input) => handlers.applySuggestion(input));
+  server.handle(toggleReactionRpc, (input) => handlers.toggleReaction(input));
+  server.handle(draftsRpc, (input) => handlers.drafts(input));
+  server.handle(addDraftRpc, (input) => handlers.addDraft(input));
+  server.handle(deleteDraftRpc, (input) => handlers.deleteDraft(input));
+  server.handle(submitReviewRpc, (input) => handlers.submitReview(input));
   server.handle(createIssueRpc, (input) => handlers.createIssue(input));
   server.handle(createMergeRequestRpc, (input) => handlers.createMergeRequest(input));
   server.handle(agentPromptRpc, (input) => handlers.agentPrompt(input));

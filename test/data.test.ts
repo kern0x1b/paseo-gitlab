@@ -129,7 +129,7 @@ describe("toDetail", () => {
           },
         ],
       },
-    });
+    }, "me");
     assert.equal(detail.descriptionHtml, "");
     assert.deepEqual(detail.reviewers, []);
     assert.equal(detail.sourceBranch, null);

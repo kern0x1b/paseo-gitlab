@@ -10,10 +10,11 @@ import type {
   Person,
   Pipeline,
   PipelineRef,
+  DraftNote,
   WorkspaceState,
 } from "../shared/contract";
 import { authStatus, requireConnection, type AuthDeps } from "./auth";
-import { assertNoMutationErrors, graphql, GitLabError, rest, type Connection } from "./gitlab";
+import { assertNoMutationErrors, graphql, GitLabError, rest, restWrite, type Connection } from "./gitlab";
 import { fetchDiffs } from "./diff";
 import { fetchImage } from "./images";
 import { parseJobLog } from "./log";
@@ -22,6 +23,8 @@ import { readCheckout } from "./workspace";
 import {
   CREATE_DIFF_NOTE_MUTATION,
   CREATE_ISSUE_MUTATION,
+  MERGE_MUTATION,
+  TOGGLE_REACTION_MUTATION,
   CREATE_MERGE_REQUEST_MUTATION,
   CREATE_DISCUSSION_MUTATION,
   CREATE_NOTE_MUTATION,
@@ -60,6 +63,32 @@ import {
 } from "./queries";
 
 const LOG_TIMEOUT_MS = 30_000;
+
+function mergeRequestPath(ref: { projectPath: string; iid: string }): string {
+  return `/projects/${encodeURIComponent(ref.projectPath)}/merge_requests/${encodeURIComponent(ref.iid)}`;
+}
+
+/** REST names a discussion by its hash; GraphQL wraps the same hash in a global id. */
+export function discussionHash(discussionId: string): string {
+  return discussionId.replace(/^gid:\/\/gitlab\/Discussion\//, "");
+}
+
+interface RawDraftNote {
+  id: number;
+  note: string;
+  discussion_id: string | null;
+  position: { new_path?: string; old_path?: string; new_line?: number | null; old_line?: number | null } | null;
+}
+
+function toDraftNote(raw: RawDraftNote): DraftNote {
+  const path = raw.position?.new_path ?? raw.position?.old_path;
+  return {
+    id: String(raw.id),
+    body: raw.note,
+    discussionId: raw.discussion_id,
+    position: path ? { path, newLine: raw.position?.new_line ?? null, oldLine: raw.position?.old_line ?? null } : null,
+  };
+}
 const LISTS_CACHE_MS = 60_000;
 
 /** Every mutation here answers `{ <name>: { errors } }`; one check for all of them. */
@@ -111,7 +140,7 @@ export function createHandlers(deps: AuthDeps) {
       if (!raw) {
         throw new Error(`${ref.projectPath}${ref.kind === "issue" ? "#" : "!"}${ref.iid} was not found.`);
       }
-      return toDetail(ref.kind, raw);
+      return toDetail(ref.kind, raw, await usernameFor(connection, deps));
     },
 
     async addNote(input: {
@@ -363,6 +392,117 @@ export function createHandlers(deps: AuthDeps) {
         throw new Error("GitLab did not return the new merge request.");
       }
       return { kind: "mr", projectPath: input.projectPath, iid };
+    },
+
+    async mergeRequestAction(
+      input: ItemRef & { action: "approve" | "unapprove" | "merge" | "auto_merge" | "cancel_auto_merge" | "rebase" },
+    ): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      const base = mergeRequestPath(input);
+      switch (input.action) {
+        case "approve":
+        case "unapprove":
+          await restWrite(connection, "POST", `${base}/${input.action}`, undefined, deps.fetch);
+          return { ok: true };
+        case "rebase":
+          await restWrite(connection, "PUT", `${base}/rebase`, undefined, deps.fetch);
+          return { ok: true };
+        case "cancel_auto_merge":
+          await restWrite(connection, "POST", `${base}/cancel_merge_when_pipeline_succeeds`, undefined, deps.fetch);
+          return { ok: true };
+        case "merge":
+        case "auto_merge": {
+          const detail = await handlers.detail(input);
+          if (!detail.diffRefs) {
+            throw new Error("GitLab did not report the MR's head commit.");
+          }
+          return mutate(
+            connection,
+            deps,
+            MERGE_MUTATION,
+            {
+              projectPath: input.projectPath,
+              iid: input.iid,
+              // Merges exactly what was reviewed; a push since then makes GitLab refuse.
+              sha: detail.diffRefs.headSha,
+              strategy: input.action === "auto_merge" ? "MERGE_WHEN_CHECKS_PASS" : null,
+            },
+            input.action === "merge" ? "merge" : "set auto-merge",
+          );
+        }
+      }
+    },
+
+    async applySuggestion(input: { id: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      const id = numericId(input.id);
+      if (!id) {
+        throw new Error("Unknown suggestion.");
+      }
+      await restWrite(connection, "PUT", `/suggestions/${id}/apply`, undefined, deps.fetch);
+      return { ok: true };
+    },
+
+    async toggleReaction(input: { awardableId: string; name: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      return mutate(connection, deps, TOGGLE_REACTION_MUTATION, input, "change the reaction");
+    },
+
+    async drafts(input: { projectPath: string; iid: string }): Promise<{ drafts: DraftNote[] }> {
+      const connection = await requireConnection(deps);
+      const raw = await rest<RawDraftNote[]>(connection, `${mergeRequestPath(input)}/draft_notes`, deps.fetch);
+      return { drafts: raw.map(toDraftNote) };
+    },
+
+    async addDraft(input: {
+      projectPath: string;
+      iid: string;
+      body: string;
+      discussionId?: string;
+      code?: { diffRefs: DiffRefs; oldPath: string; newPath: string; oldLine: number | null; newLine: number | null };
+    }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      await restWrite(
+        connection,
+        "POST",
+        `${mergeRequestPath(input)}/draft_notes`,
+        {
+          note: input.body,
+          ...(input.discussionId ? { in_reply_to_discussion_id: discussionHash(input.discussionId) } : {}),
+          ...(input.code
+            ? {
+                position: {
+                  position_type: "text",
+                  base_sha: input.code.diffRefs.baseSha,
+                  head_sha: input.code.diffRefs.headSha,
+                  start_sha: input.code.diffRefs.startSha,
+                  old_path: input.code.oldPath,
+                  new_path: input.code.newPath,
+                  old_line: input.code.oldLine,
+                  new_line: input.code.newLine,
+                },
+              }
+            : {}),
+        },
+        deps.fetch,
+      );
+      return { ok: true };
+    },
+
+    async deleteDraft(input: { projectPath: string; iid: string; id: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      await restWrite(connection, "DELETE", `${mergeRequestPath(input)}/draft_notes/${encodeURIComponent(input.id)}`, undefined, deps.fetch);
+      return { ok: true };
+    },
+
+    async submitReview(input: { projectPath: string; iid: string; approve: boolean }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      const base = mergeRequestPath(input);
+      await restWrite(connection, "POST", `${base}/draft_notes/bulk_publish`, undefined, deps.fetch);
+      if (input.approve) {
+        await restWrite(connection, "POST", `${base}/approve`, undefined, deps.fetch);
+      }
+      return { ok: true };
     },
 
     async workspace(input: { directory: string }): Promise<WorkspaceState> {

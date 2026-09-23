@@ -1,9 +1,10 @@
 import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useMemo, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import {
   addDiffNoteRpc,
+  addDraftRpc,
   detailRpc,
   diffsRpc,
   type Detail,
@@ -15,6 +16,7 @@ import {
 import { Button, Centered, errorText, IconButton } from "./common";
 import { Composer, Thread, useNoteActions, useWrite, type NoteActions, type Ui } from "./detail";
 import { detailKey } from "./queries";
+import { draftsKey, ReviewBar } from "./review";
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
 
@@ -159,7 +161,7 @@ function FileDiff({
   expanded: boolean;
   onToggle: () => void;
   actions: NoteActions;
-  onComment: (file: DiffFile, line: DiffLine, body: string) => Promise<unknown>;
+  onComment: (file: DiffFile, line: DiffLine, body: string, asDraft: boolean) => Promise<unknown>;
   ui: Ui;
 }) {
   const { styles, theme } = ui;
@@ -227,9 +229,23 @@ function FileDiff({
                           sendLabel="Add comment"
                           autoFocus
                           onSend={async (body) => {
-                            await onComment(file, line, body);
+                            await onComment(file, line, body, false);
                             setCommentingAt(null);
                           }}
+                          others={[
+                            {
+                              label: "Add to review",
+                              onSend: async (body) => {
+                                await onComment(file, line, body, true);
+                                setCommentingAt(null);
+                              },
+                            },
+                          ]}
+                          templates={
+                            line.kind !== "removed" && detail.canPush
+                              ? [{ label: "Suggest change", text: `\`\`\`suggestion:-0+0\n${line.text}\n\`\`\`` }]
+                              : []
+                          }
                           onCancel={() => setCommentingAt(null)}
                           ui={ui}
                         />
@@ -270,13 +286,15 @@ export function ChangesView({
   const readDetail = useRpc(detailRpc);
   const readDiffs = useRpc(diffsRpc);
   const addDiffNote = useRpc(addDiffNoteRpc);
+  const addDraft = useRpc(addDraftRpc);
+  const queryClient = useQueryClient();
   const write = useWrite(itemRef);
   const detail = useQuery({ queryKey: detailKey(itemRef), queryFn: () => readDetail(itemRef) });
   const diffs = useQuery({
     queryKey: diffsKey(itemRef),
     queryFn: () => readDiffs({ projectPath: itemRef.projectPath, iid: itemRef.iid }),
   });
-  const actions = useNoteActions(itemRef, detail.data?.id);
+  const actions = useNoteActions(itemRef, detail.data);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const files = diffs.data?.files ?? [];
@@ -322,21 +340,23 @@ export function ChangesView({
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
   const diffRefs = detail.data.diffRefs;
 
-  const comment = (file: DiffFile, line: DiffLine, body: string) => {
+  const comment = (file: DiffFile, line: DiffLine, body: string, asDraft: boolean) => {
     if (!diffRefs) {
       return Promise.reject(new Error("GitLab did not report the commits this MR compares."));
     }
-    return write(() =>
-      addDiffNote({
-        noteableId: detail.data.id,
-        body,
-        diffRefs,
-        oldPath: file.oldPath,
-        newPath: file.newPath,
-        oldLine: line.kind === "added" ? null : line.oldLine,
-        newLine: line.kind === "removed" ? null : line.newLine,
-      }),
-    );
+    const anchor = {
+      oldPath: file.oldPath,
+      newPath: file.newPath,
+      oldLine: line.kind === "added" ? null : line.oldLine,
+      newLine: line.kind === "removed" ? null : line.newLine,
+    };
+    if (asDraft) {
+      return write(async () => {
+        await addDraft({ projectPath: itemRef.projectPath, iid: itemRef.iid, body, code: { diffRefs, ...anchor } });
+        await queryClient.invalidateQueries({ queryKey: draftsKey(itemRef.projectPath, itemRef.iid) });
+      });
+    }
+    return write(() => addDiffNote({ noteableId: detail.data.id, body, diffRefs, ...anchor }));
   };
 
   return (
@@ -368,6 +388,7 @@ export function ChangesView({
           styles={styles}
         />
       </View>
+      <ReviewBar detail={detail.data} write={write} ui={ui} />
       {detail.data.canComment ? <Text style={styles.small}>Tap a line to comment on it.</Text> : null}
       {diffs.data.truncated ? <Text style={styles.small}>Only the first 500 files are shown.</Text> : null}
       {files.map((file) => (

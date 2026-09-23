@@ -63,6 +63,9 @@ export const ListsSchema = z.object({
   reviewMergeRequests: z.array(ListItemSchema),
 });
 
+/** One emoji on a note or MR, with who gave it. */
+export const ReactionSchema = z.object({ name: z.string(), emoji: z.string(), users: z.array(z.string()) });
+
 /** Where a code comment sits: the file and the line on either side of the diff. */
 export const NotePositionSchema = z.object({
   path: z.string(),
@@ -81,6 +84,9 @@ export const NoteSchema = z.object({
   /** GitLab's `adminNote`: your own notes, or any note if you administer the project. */
   canEdit: z.boolean(),
   position: NotePositionSchema.nullable(),
+  reactions: z.array(z.lazy(() => ReactionSchema)),
+  /** Suggested changes in the note; applying one commits it to the source branch. */
+  suggestions: z.array(z.object({ id: z.string(), applied: z.boolean() })),
 });
 
 export const DiscussionSchema = z.object({
@@ -122,6 +128,19 @@ export const DetailSchema = ItemRefSchema.extend({
   mergeStatus: z.string().nullable(),
   approved: z.boolean().nullable(),
   discussions: z.array(DiscussionSchema),
+  /** The connected user, for "you approved" and your own reactions. */
+  viewer: z.string(),
+  approvedBy: z.array(z.string()),
+  canApprove: z.boolean(),
+  canMerge: z.boolean(),
+  /** Pushing to the source branch is what applying a suggestion or rebasing needs. */
+  canPush: z.boolean(),
+  mergeable: z.boolean(),
+  autoMergeEnabled: z.boolean(),
+  autoMergeStrategies: z.array(z.string()),
+  shouldBeRebased: z.boolean(),
+  rebaseInProgress: z.boolean(),
+  reactions: z.array(ReactionSchema),
 });
 
 export const AuthStatusSchema = z.discriminatedUnion("connected", [
@@ -205,6 +224,7 @@ export type ListItem = z.output<typeof ListItemSchema>;
 export type Lists = z.output<typeof ListsSchema>;
 export type Note = z.output<typeof NoteSchema>;
 export type NotePosition = z.output<typeof NotePositionSchema>;
+export type Reaction = z.output<typeof ReactionSchema>;
 export type DetailLabel = z.output<typeof DetailLabelSchema>;
 export type DiffRefs = z.output<typeof DiffRefsSchema>;
 export type Discussion = z.output<typeof DiscussionSchema>;
@@ -458,4 +478,71 @@ export const createMergeRequestRpc = defineRpc({
     targetBranch: z.string(),
   }),
   output: ItemRefSchema,
+});
+
+export const mergeRequestActionRpc = defineRpc({
+  name: "gitlab.mr.action",
+  input: ItemRefSchema.extend({
+    action: z.enum(["approve", "unapprove", "merge", "auto_merge", "cancel_auto_merge", "rebase"]),
+  }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const applySuggestionRpc = defineRpc({
+  name: "gitlab.suggestion.apply",
+  input: z.object({ id: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const toggleReactionRpc = defineRpc({
+  name: "gitlab.reaction.toggle",
+  input: z.object({ awardableId: z.string(), name: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const DraftNoteSchema = z.object({
+  id: z.string(),
+  body: z.string(),
+  discussionId: z.string().nullable(),
+  position: NotePositionSchema.nullable(),
+});
+
+export type DraftNote = z.output<typeof DraftNoteSchema>;
+
+const MergeRequestRefSchema = z.object({ projectPath: z.string(), iid: z.string() });
+
+export const draftsRpc = defineRpc({
+  name: "gitlab.review.drafts",
+  input: MergeRequestRefSchema,
+  output: z.object({ drafts: z.array(DraftNoteSchema) }),
+});
+
+export const addDraftRpc = defineRpc({
+  name: "gitlab.review.add",
+  input: MergeRequestRefSchema.extend({
+    body: z.string().min(1),
+    discussionId: z.string().optional(),
+    code: z
+      .object({
+        diffRefs: DiffRefsSchema,
+        oldPath: z.string(),
+        newPath: z.string(),
+        oldLine: z.number().nullable(),
+        newLine: z.number().nullable(),
+      })
+      .optional(),
+  }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const deleteDraftRpc = defineRpc({
+  name: "gitlab.review.delete",
+  input: MergeRequestRefSchema.extend({ id: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const submitReviewRpc = defineRpc({
+  name: "gitlab.review.submit",
+  input: MergeRequestRefSchema.extend({ approve: z.boolean() }),
+  output: z.object({ ok: z.literal(true) }),
 });
