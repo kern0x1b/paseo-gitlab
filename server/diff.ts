@@ -14,7 +14,7 @@ const MAX_PAGES = 10;
 const MAX_LINES_PER_FILE = 2000;
 const REQUEST_TIMEOUT_MS = 30_000;
 
-interface RawDiff {
+export interface RawDiff {
   diff: string;
   old_path: string;
   new_path: string;
@@ -38,13 +38,34 @@ export function parseUnifiedDiff(diff: string): DiffLine[] {
       newLine = Number(hunk[2]);
       lines.push({ kind: "hunk", oldLine: null, newLine: null, oldPos: oldLine, newPos: newLine, text });
     } else if (text.startsWith("+")) {
-      lines.push({ kind: "added", oldLine: null, newLine, oldPos: oldLine, newPos: newLine, text: text.slice(1) });
+      lines.push({
+        kind: "added",
+        oldLine: null,
+        newLine,
+        oldPos: oldLine,
+        newPos: newLine,
+        text: text.slice(1),
+      });
       newLine += 1;
     } else if (text.startsWith("-")) {
-      lines.push({ kind: "removed", oldLine, newLine: null, oldPos: oldLine, newPos: newLine, text: text.slice(1) });
+      lines.push({
+        kind: "removed",
+        oldLine,
+        newLine: null,
+        oldPos: oldLine,
+        newPos: newLine,
+        text: text.slice(1),
+      });
       oldLine += 1;
     } else if (text.startsWith(" ")) {
-      lines.push({ kind: "context", oldLine, newLine, oldPos: oldLine, newPos: newLine, text: text.slice(1) });
+      lines.push({
+        kind: "context",
+        oldLine,
+        newLine,
+        oldPos: oldLine,
+        newPos: newLine,
+        text: text.slice(1),
+      });
       oldLine += 1;
       newLine += 1;
     }
@@ -53,7 +74,7 @@ export function parseUnifiedDiff(diff: string): DiffLine[] {
   return lines;
 }
 
-function toFile(raw: RawDiff): DiffFile {
+export function toFile(raw: RawDiff): DiffFile {
   const lines = raw.too_large || raw.collapsed ? [] : parseUnifiedDiff(raw.diff ?? "");
   const truncated = Boolean(raw.too_large || raw.collapsed) || lines.length > MAX_LINES_PER_FILE;
   return {
@@ -137,7 +158,60 @@ export function codePosition(input: {
   };
   const same = input.start.oldPos === input.end.oldPos && input.start.newPos === input.end.newPos;
   if (!same) {
-    position.line_range = { start: rangeEnd(input.newPath, input.start), end: rangeEnd(input.newPath, input.end) };
+    position.line_range = {
+      start: rangeEnd(input.newPath, input.start),
+      end: rangeEnd(input.newPath, input.end),
+    };
   }
   return position;
+}
+
+/** The files changed between two commits, `from` excluded and `to` included. */
+export async function fetchCompare(
+  connection: Connection,
+  projectPath: string,
+  from: string,
+  to: string,
+  fetchImpl: Fetch = fetch,
+): Promise<{ files: DiffFile[]; truncated: boolean }> {
+  const response = await fetchImpl(
+    `${connection.host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&straight=true`,
+    {
+      headers: { Authorization: `Bearer ${connection.token}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    },
+  );
+  if (!response.ok) {
+    throw new GitLabError(`GitLab returned ${response.status} for the comparison.`, response.status);
+  }
+  const body = (await response.json()) as { diffs: RawDiff[]; compare_timeout?: boolean };
+  return { files: body.diffs.map(toFile), truncated: Boolean(body.compare_timeout) };
+}
+
+/** The files changed by one commit. */
+export async function fetchCommitDiffs(
+  connection: Connection,
+  projectPath: string,
+  sha: string,
+  fetchImpl: Fetch = fetch,
+): Promise<{ files: DiffFile[]; truncated: boolean }> {
+  const files: DiffFile[] = [];
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const response = await fetchImpl(
+      `${connection.host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(sha)}/diff?page=${page}&per_page=${PER_PAGE}`,
+      {
+        headers: { Authorization: `Bearer ${connection.token}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    );
+    if (!response.ok) {
+      throw new GitLabError(`GitLab returned ${response.status} for the commit.`, response.status);
+    }
+    const batch = (await response.json()) as RawDiff[];
+    files.push(...batch.map(toFile));
+    if (batch.length < PER_PAGE) {
+      return { files, truncated: false };
+    }
+  }
+  return { files, truncated: true };
 }

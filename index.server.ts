@@ -27,6 +27,10 @@ import {
   authDisconnectRpc,
   authStatusRpc,
   clientLogRpc,
+  commitsRpc,
+  fileLinesRpc,
+  scopedDiffsRpc,
+  versionsRpc,
   deleteQueryRpc,
   markdownPreviewRpc,
   referenceSearchRpc,
@@ -68,6 +72,10 @@ export default function contribute(server: PluginServerContext) {
   server.handle(diffsRpc, (input) => handlers.diffs(input));
   server.handle(addDiffNoteRpc, (input) => handlers.addDiffNote(input));
   server.handle(workspaceRpc, (input) => handlers.workspace(input));
+  server.handle(versionsRpc, (input) => handlers.versions(input));
+  server.handle(commitsRpc, (input) => handlers.commits(input));
+  server.handle(scopedDiffsRpc, (input) => handlers.scopedDiffs(input));
+  server.handle(fileLinesRpc, (input) => handlers.fileLines(input));
   server.handle(addCodeCommentRpc, (input) => handlers.addCodeComment(input));
   server.handle(referenceSearchRpc, (input) => handlers.referenceSearch(input));
   server.handle(markdownPreviewRpc, (input) => handlers.markdownPreview(input));

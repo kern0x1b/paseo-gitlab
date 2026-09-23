@@ -184,7 +184,9 @@ export const JobSchema = z.object({
   cancelable: z.boolean(),
   webUrl: z.string(),
   /** Downloadable files the job kept; the log itself is left out. */
-  artifacts: z.array(z.object({ name: z.string(), fileType: z.string(), size: z.number().nullable(), url: z.string() })),
+  artifacts: z.array(
+    z.object({ name: z.string(), fileType: z.string(), size: z.number().nullable(), url: z.string() }),
+  ),
   /** A trigger job's child or multi-project pipeline. */
   downstream: PipelineRefSchema.extend({ status: z.string() }).nullable(),
 });
@@ -465,7 +467,15 @@ export const agentPromptRpc = defineRpc({
   name: "gitlab.agent.prompt",
   input: z.union([
     z.object({ item: ItemRefSchema }),
-    z.object({ job: z.object({ projectPath: z.string(), jobId: z.string(), name: z.string(), webUrl: z.string(), pipelineIid: z.string().nullable() }) }),
+    z.object({
+      job: z.object({
+        projectPath: z.string(),
+        jobId: z.string(),
+        name: z.string(),
+        webUrl: z.string(),
+        pipelineIid: z.string().nullable(),
+      }),
+    }),
   ]),
   output: z.object({ title: z.string(), text: z.string() }),
 });
@@ -631,7 +641,13 @@ export const runPipelineRpc = defineRpc({
   output: PipelineRefSchema,
 });
 
-const CodeLineSchema = DiffLineSchema.pick({ kind: true, oldLine: true, newLine: true, oldPos: true, newPos: true });
+const CodeLineSchema = DiffLineSchema.pick({
+  kind: true,
+  oldLine: true,
+  newLine: true,
+  oldPos: true,
+  newPos: true,
+});
 
 /** A comment on one line or a range of lines of an MR's diff, published or saved to the review. */
 export const addCodeCommentRpc = defineRpc({
@@ -648,4 +664,60 @@ export const addCodeCommentRpc = defineRpc({
     asDraft: z.boolean(),
   }),
   output: z.object({ ok: z.literal(true) }),
+});
+
+/** One push to the MR: GitLab keeps a version per head commit it saw. */
+export const MergeRequestVersionSchema = z.object({
+  id: z.string(),
+  headSha: z.string(),
+  baseSha: z.string(),
+  startSha: z.string(),
+  createdAt: z.string(),
+});
+
+export type MergeRequestVersion = z.output<typeof MergeRequestVersionSchema>;
+
+export const versionsRpc = defineRpc({
+  name: "gitlab.mr.versions",
+  input: z.object({ projectPath: z.string(), iid: z.string() }),
+  output: z.object({ versions: z.array(MergeRequestVersionSchema) }),
+});
+
+export const CommitSchema = z.object({
+  sha: z.string(),
+  shortSha: z.string(),
+  title: z.string(),
+  author: z.string(),
+  createdAt: z.string(),
+  webUrl: z.string(),
+});
+
+export type Commit = z.output<typeof CommitSchema>;
+
+export const commitsRpc = defineRpc({
+  name: "gitlab.mr.commits",
+  input: z.object({ projectPath: z.string(), iid: z.string() }),
+  output: z.object({ commits: z.array(CommitSchema) }),
+});
+
+/** What the diff panel shows: an MR's whole change, the change between two commits, or one commit. */
+export const DiffScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("mr"), projectPath: z.string(), iid: z.string() }),
+  z.object({ kind: z.literal("compare"), projectPath: z.string(), from: z.string(), to: z.string() }),
+  z.object({ kind: z.literal("commit"), projectPath: z.string(), sha: z.string() }),
+]);
+
+export type DiffScope = z.output<typeof DiffScopeSchema>;
+
+export const scopedDiffsRpc = defineRpc({
+  name: "gitlab.diffs.scoped",
+  input: DiffScopeSchema,
+  output: z.object({ files: z.array(DiffFileSchema), truncated: z.boolean() }),
+});
+
+export const fileLinesRpc = defineRpc({
+  name: "gitlab.file.lines",
+  input: z.object({ projectPath: z.string(), path: z.string(), ref: z.string() }),
+  /** The file split into lines, or null when it is binary or too large to show. */
+  output: z.object({ lines: z.array(z.string()).nullable() }),
 });

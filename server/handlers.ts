@@ -12,6 +12,9 @@ import type {
   Pipeline,
   PipelineRef,
   DraftNote,
+  DiffScope,
+  Commit,
+  MergeRequestVersion,
   WorkspaceState,
   SavedQuery,
   SearchQuery,
@@ -21,10 +24,17 @@ import { randomUUID } from "node:crypto";
 import { readSavedQueries, writeSavedQueries } from "./state";
 import { authStatus, requireConnection, type AuthDeps } from "./auth";
 import { assertNoMutationErrors, graphql, GitLabError, rest, restWrite, type Connection } from "./gitlab";
-import { codePosition, fetchDiffs } from "./diff";
+import { codePosition, fetchCommitDiffs, fetchCompare, fetchDiffs } from "./diff";
 import { fetchImage } from "./images";
 import { MAX_LOG_LINES, parseJobLog } from "./log";
-import { agentPrompt, failedJobsOf, itemContext, jobPrompt, logTail, type FailedJobLog } from "./agent-context";
+import {
+  agentPrompt,
+  failedJobsOf,
+  itemContext,
+  jobPrompt,
+  logTail,
+  type FailedJobLog,
+} from "./agent-context";
 import { readCheckout } from "./workspace";
 import {
   CREATE_DIFF_NOTE_MUTATION,
@@ -76,6 +86,8 @@ import {
 } from "./queries";
 
 const LOG_TIMEOUT_MS = 30_000;
+/** Past this a file is shown from its diff only; expanding context would freeze the panel. */
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
 /** "Show the full log": still bounded, so a runaway job cannot freeze the panel. */
 const FULL_LOG_LINES = 50_000;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -94,7 +106,12 @@ interface RawDraftNote {
   id: number;
   note: string;
   discussion_id: string | null;
-  position: { new_path?: string; old_path?: string; new_line?: number | null; old_line?: number | null } | null;
+  position: {
+    new_path?: string;
+    old_path?: string;
+    new_line?: number | null;
+    old_line?: number | null;
+  } | null;
 }
 
 function toDraftNote(raw: RawDraftNote): DraftNote {
@@ -103,7 +120,9 @@ function toDraftNote(raw: RawDraftNote): DraftNote {
     id: String(raw.id),
     body: raw.note,
     discussionId: raw.discussion_id,
-    position: path ? { path, newLine: raw.position?.new_line ?? null, oldLine: raw.position?.old_line ?? null } : null,
+    position: path
+      ? { path, newLine: raw.position?.new_line ?? null, oldLine: raw.position?.old_line ?? null }
+      : null,
   };
 }
 const LISTS_CACHE_MS = 60_000;
@@ -116,7 +135,12 @@ async function mutate(
   variables: Record<string, unknown>,
   action: string,
 ): Promise<{ ok: true }> {
-  const data = await graphql<Record<string, { errors?: string[] } | null>>(connection, mutation, variables, deps.fetch);
+  const data = await graphql<Record<string, { errors?: string[] } | null>>(
+    connection,
+    mutation,
+    variables,
+    deps.fetch,
+  );
   assertNoMutationErrors(Object.values(data)[0], action);
   return { ok: true };
 }
@@ -146,7 +170,12 @@ export function createHandlers(deps: AuthDeps) {
       const [mine, review, issues] = await Promise.all([
         graphql<Pick<RawLists, "currentUser">>(connection, LISTS_QUERIES.mergeRequests, {}, deps.fetch),
         graphql<Pick<RawLists, "currentUser">>(connection, LISTS_QUERIES.review, {}, deps.fetch),
-        graphql<Pick<RawLists, "assignedIssues" | "authoredIssues">>(connection, LISTS_QUERIES.issues, { me }, deps.fetch),
+        graphql<Pick<RawLists, "assignedIssues" | "authoredIssues">>(
+          connection,
+          LISTS_QUERIES.issues,
+          { me },
+          deps.fetch,
+        ),
       ]);
       return toLists({
         currentUser: {
@@ -209,7 +238,9 @@ export function createHandlers(deps: AuthDeps) {
       return mutate(connection, deps, DESTROY_NOTE_MUTATION, input, "delete the comment");
     },
 
-    async updateItem(input: ItemRef & { title?: string; description?: string; state?: "close" | "reopen"; draft?: boolean }): Promise<{ ok: true }> {
+    async updateItem(
+      input: ItemRef & { title?: string; description?: string; state?: "close" | "reopen"; draft?: boolean },
+    ): Promise<{ ok: true }> {
       const connection = await requireConnection(deps);
       const target = { projectPath: input.projectPath, iid: input.iid };
       if (input.kind === "issue") {
@@ -241,12 +272,20 @@ export function createHandlers(deps: AuthDeps) {
         );
       }
       if (input.draft !== undefined) {
-        await mutate(connection, deps, SET_DRAFT_MUTATION, { ...target, draft: input.draft }, "change the draft status");
+        await mutate(
+          connection,
+          deps,
+          SET_DRAFT_MUTATION,
+          { ...target, draft: input.draft },
+          "change the draft status",
+        );
       }
       return { ok: true };
     },
 
-    async setPeople(input: ItemRef & { field: "assignees" | "reviewers"; usernames: string[] }): Promise<{ ok: true }> {
+    async setPeople(
+      input: ItemRef & { field: "assignees" | "reviewers"; usernames: string[] },
+    ): Promise<{ ok: true }> {
       const connection = await requireConnection(deps);
       if (input.kind === "issue" && input.field === "reviewers") {
         throw new Error("Issues have no reviewers.");
@@ -296,7 +335,10 @@ export function createHandlers(deps: AuthDeps) {
       return { labels: data.project?.labels?.nodes ?? [] };
     },
 
-    async diffs(input: { projectPath: string; iid: string }): Promise<{ files: DiffFile[]; truncated: boolean }> {
+    async diffs(input: {
+      projectPath: string;
+      iid: string;
+    }): Promise<{ files: DiffFile[]; truncated: boolean }> {
       const connection = await requireConnection(deps);
       return fetchDiffs(connection, input.projectPath, input.iid, deps.fetch);
     },
@@ -340,7 +382,12 @@ export function createHandlers(deps: AuthDeps) {
 
     async pipeline(ref: PipelineRef): Promise<Pipeline> {
       const connection = await requireConnection(deps);
-      const data = await graphql<RawPipeline>(connection, PIPELINE_QUERY, { path: ref.projectPath, iid: ref.iid }, deps.fetch);
+      const data = await graphql<RawPipeline>(
+        connection,
+        PIPELINE_QUERY,
+        { path: ref.projectPath, iid: ref.iid },
+        deps.fetch,
+      );
       const raw = data.project?.pipeline;
       if (!raw) {
         throw new Error(`Pipeline #${ref.iid} in ${ref.projectPath} was not found.`);
@@ -356,7 +403,10 @@ export function createHandlers(deps: AuthDeps) {
       }
       const response = await deps.fetch(
         `${connection.host}/api/v4/projects/${encodeURIComponent(input.projectPath)}/jobs/${id}/trace`,
-        { headers: { Authorization: `Bearer ${connection.token}` }, signal: AbortSignal.timeout(LOG_TIMEOUT_MS) },
+        {
+          headers: { Authorization: `Bearer ${connection.token}` },
+          signal: AbortSignal.timeout(LOG_TIMEOUT_MS),
+        },
       );
       if (!response.ok) {
         throw new GitLabError(`GitLab returned ${response.status} for the job log.`, response.status);
@@ -366,7 +416,13 @@ export function createHandlers(deps: AuthDeps) {
 
     async jobAction(input: { jobId: string; action: "retry" | "play" | "cancel" }): Promise<{ ok: true }> {
       const connection = await requireConnection(deps);
-      return mutate(connection, deps, JOB_MUTATIONS[input.action], { id: input.jobId }, `${input.action} the job`);
+      return mutate(
+        connection,
+        deps,
+        JOB_MUTATIONS[input.action],
+        { id: input.jobId },
+        `${input.action} the job`,
+      );
     },
 
     async pipelineAction(input: { pipelineId: string; action: "retry" | "cancel" }): Promise<{ ok: true }> {
@@ -392,12 +448,9 @@ export function createHandlers(deps: AuthDeps) {
 
     async createIssue(input: { projectPath: string; title: string; description: string }): Promise<ItemRef> {
       const connection = await requireConnection(deps);
-      const data = await graphql<{ createIssue: { issue: { iid: string } | null; errors?: string[] } | null }>(
-        connection,
-        CREATE_ISSUE_MUTATION,
-        input,
-        deps.fetch,
-      );
+      const data = await graphql<{
+        createIssue: { issue: { iid: string } | null; errors?: string[] } | null;
+      }>(connection, CREATE_ISSUE_MUTATION, input, deps.fetch);
       assertNoMutationErrors(data.createIssue, "create the issue");
       const iid = data.createIssue?.issue?.iid;
       if (!iid) {
@@ -426,7 +479,9 @@ export function createHandlers(deps: AuthDeps) {
     },
 
     async mergeRequestAction(
-      input: ItemRef & { action: "approve" | "unapprove" | "merge" | "auto_merge" | "cancel_auto_merge" | "rebase" },
+      input: ItemRef & {
+        action: "approve" | "unapprove" | "merge" | "auto_merge" | "cancel_auto_merge" | "rebase";
+      },
     ): Promise<{ ok: true }> {
       const connection = await requireConnection(deps);
       const base = mergeRequestPath(input);
@@ -439,7 +494,13 @@ export function createHandlers(deps: AuthDeps) {
           await restWrite(connection, "PUT", `${base}/rebase`, undefined, deps.fetch);
           return { ok: true };
         case "cancel_auto_merge":
-          await restWrite(connection, "POST", `${base}/cancel_merge_when_pipeline_succeeds`, undefined, deps.fetch);
+          await restWrite(
+            connection,
+            "POST",
+            `${base}/cancel_merge_when_pipeline_succeeds`,
+            undefined,
+            deps.fetch,
+          );
           return { ok: true };
         case "merge":
         case "auto_merge": {
@@ -481,7 +542,11 @@ export function createHandlers(deps: AuthDeps) {
 
     async drafts(input: { projectPath: string; iid: string }): Promise<{ drafts: DraftNote[] }> {
       const connection = await requireConnection(deps);
-      const raw = await rest<RawDraftNote[]>(connection, `${mergeRequestPath(input)}/draft_notes`, deps.fetch);
+      const raw = await rest<RawDraftNote[]>(
+        connection,
+        `${mergeRequestPath(input)}/draft_notes`,
+        deps.fetch,
+      );
       return { drafts: raw.map(toDraftNote) };
     },
 
@@ -490,7 +555,13 @@ export function createHandlers(deps: AuthDeps) {
       iid: string;
       body: string;
       discussionId?: string;
-      code?: { diffRefs: DiffRefs; oldPath: string; newPath: string; oldLine: number | null; newLine: number | null };
+      code?: {
+        diffRefs: DiffRefs;
+        oldPath: string;
+        newPath: string;
+        oldLine: number | null;
+        newLine: number | null;
+      };
     }): Promise<{ ok: true }> {
       const connection = await requireConnection(deps);
       await restWrite(
@@ -522,7 +593,13 @@ export function createHandlers(deps: AuthDeps) {
 
     async deleteDraft(input: { projectPath: string; iid: string; id: string }): Promise<{ ok: true }> {
       const connection = await requireConnection(deps);
-      await restWrite(connection, "DELETE", `${mergeRequestPath(input)}/draft_notes/${encodeURIComponent(input.id)}`, undefined, deps.fetch);
+      await restWrite(
+        connection,
+        "DELETE",
+        `${mergeRequestPath(input)}/draft_notes/${encodeURIComponent(input.id)}`,
+        undefined,
+        deps.fetch,
+      );
       return { ok: true };
     },
 
@@ -545,7 +622,12 @@ export function createHandlers(deps: AuthDeps) {
           issues?: { nodes: { iid: string; title: string }[] };
           mergeRequests?: { nodes: { iid: string; title: string }[] };
         } | null;
-      }>(connection, REFERENCE_SEARCH_QUERY[input.kind], referenceVariables(input.projectPath, input.term), deps.fetch);
+      }>(
+        connection,
+        REFERENCE_SEARCH_QUERY[input.kind],
+        referenceVariables(input.projectPath, input.term),
+        deps.fetch,
+      );
       const rows = input.kind === "issue" ? data.project?.issues?.nodes : data.project?.mergeRequests?.nodes;
       return { items: (rows ?? []).map(({ iid, title }) => ({ iid, title })) };
     },
@@ -562,7 +644,12 @@ export function createHandlers(deps: AuthDeps) {
       return { html: result?.html ?? "" };
     },
 
-    async upload(input: { projectPath: string; filename: string; contentType: string; base64: string }): Promise<{
+    async upload(input: {
+      projectPath: string;
+      filename: string;
+      contentType: string;
+      base64: string;
+    }): Promise<{
       markdown: string;
     }> {
       const connection = await requireConnection(deps);
@@ -571,7 +658,11 @@ export function createHandlers(deps: AuthDeps) {
         throw new Error("The file is larger than 10 MB.");
       }
       const form = new FormData();
-      form.append("file", new Blob([bytes], { type: input.contentType || "application/octet-stream" }), input.filename);
+      form.append(
+        "file",
+        new Blob([bytes], { type: input.contentType || "application/octet-stream" }),
+        input.filename,
+      );
       const response = await deps.fetch(
         `${connection.host}/api/v4/projects/${encodeURIComponent(input.projectPath)}/uploads`,
         { method: "POST", headers: { Authorization: `Bearer ${connection.token}` }, body: form },
@@ -588,7 +679,12 @@ export function createHandlers(deps: AuthDeps) {
 
     async search(input: SearchQuery): Promise<{ items: ListItem[] }> {
       const connection = await requireConnection(deps);
-      const raw = await graphql<RawSearchResult>(connection, searchQuery(input.kind), searchVariables(input), deps.fetch);
+      const raw = await graphql<RawSearchResult>(
+        connection,
+        searchQuery(input.kind),
+        searchVariables(input),
+        deps.fetch,
+      );
       return { items: toSearchResults(input.kind, raw) };
     },
 
@@ -597,7 +693,9 @@ export function createHandlers(deps: AuthDeps) {
     },
 
     saveQuery(input: SearchQuery & { name: string }): { queries: SavedQuery[] } {
-      const queries = [...readSavedQueries<SavedQuery>(), { ...input, id: randomUUID() }].slice(-SAVED_QUERY_LIMIT);
+      const queries = [...readSavedQueries<SavedQuery>(), { ...input, id: randomUUID() }].slice(
+        -SAVED_QUERY_LIMIT,
+      );
       writeSavedQueries(queries);
       return { queries };
     },
@@ -608,9 +706,15 @@ export function createHandlers(deps: AuthDeps) {
       return { queries };
     },
 
-    async runPipeline(input: { projectPath: string; ref: string; mergeRequestIid?: string }): Promise<PipelineRef> {
+    async runPipeline(input: {
+      projectPath: string;
+      ref: string;
+      mergeRequestIid?: string;
+    }): Promise<PipelineRef> {
       const connection = await requireConnection(deps);
-      const data = await graphql<{ pipelineCreate: { pipeline: { iid: string } | null; errors?: string[] } | null }>(
+      const data = await graphql<{
+        pipelineCreate: { pipeline: { iid: string } | null; errors?: string[] } | null;
+      }>(
         connection,
         RUN_PIPELINE_MUTATION,
         { projectPath: input.projectPath, ref: input.ref, mergeRequestIid: input.mergeRequestIid ?? null },
@@ -647,6 +751,93 @@ export function createHandlers(deps: AuthDeps) {
       return { ok: true };
     },
 
+    async versions(input: {
+      projectPath: string;
+      iid: string;
+    }): Promise<{ versions: MergeRequestVersion[] }> {
+      const connection = await requireConnection(deps);
+      const raw = await rest<
+        {
+          id: number;
+          head_commit_sha: string;
+          base_commit_sha: string;
+          start_commit_sha: string;
+          created_at: string;
+        }[]
+      >(connection, `${mergeRequestPath(input)}/versions`, deps.fetch);
+      return {
+        versions: raw.map((version) => ({
+          id: String(version.id),
+          headSha: version.head_commit_sha,
+          baseSha: version.base_commit_sha,
+          startSha: version.start_commit_sha,
+          createdAt: version.created_at,
+        })),
+      };
+    },
+
+    async commits(input: { projectPath: string; iid: string }): Promise<{ commits: Commit[] }> {
+      const connection = await requireConnection(deps);
+      const raw = await rest<
+        {
+          id: string;
+          short_id: string;
+          title: string;
+          author_name: string;
+          created_at: string;
+          web_url: string;
+        }[]
+      >(connection, `${mergeRequestPath(input)}/commits?per_page=100`, deps.fetch);
+      return {
+        commits: raw.map((commit) => ({
+          sha: commit.id,
+          shortSha: commit.short_id,
+          title: commit.title,
+          author: commit.author_name,
+          createdAt: commit.created_at,
+          webUrl: commit.web_url,
+        })),
+      };
+    },
+
+    async scopedDiffs(scope: DiffScope): Promise<{ files: DiffFile[]; truncated: boolean }> {
+      const connection = await requireConnection(deps);
+      switch (scope.kind) {
+        case "mr":
+          return fetchDiffs(connection, scope.projectPath, scope.iid, deps.fetch);
+        case "compare":
+          return fetchCompare(connection, scope.projectPath, scope.from, scope.to, deps.fetch);
+        case "commit":
+          return fetchCommitDiffs(connection, scope.projectPath, scope.sha, deps.fetch);
+      }
+    },
+
+    async fileLines(input: {
+      projectPath: string;
+      path: string;
+      ref: string;
+    }): Promise<{ lines: string[] | null }> {
+      const connection = await requireConnection(deps);
+      const response = await deps.fetch(
+        `${connection.host}/api/v4/projects/${encodeURIComponent(input.projectPath)}/repository/files/${encodeURIComponent(input.path)}/raw?ref=${encodeURIComponent(input.ref)}`,
+        {
+          headers: { Authorization: `Bearer ${connection.token}` },
+          signal: AbortSignal.timeout(LOG_TIMEOUT_MS),
+        },
+      );
+      if (response.status === 404) {
+        return { lines: null };
+      }
+      if (!response.ok) {
+        throw new GitLabError(`GitLab returned ${response.status} for the file.`, response.status);
+      }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length > MAX_FILE_BYTES || bytes.subarray(0, 8000).includes(0)) {
+        return { lines: null };
+      }
+      return { lines: bytes.toString("utf8").split("\n") };
+    },
+
     async workspace(input: { directory: string }): Promise<WorkspaceState> {
       const connection = await requireConnection(deps);
       const checkout = await readCheckout(input.directory, connection.host);
@@ -670,12 +861,16 @@ export function createHandlers(deps: AuthDeps) {
       if (detail.kind !== "mr" || !detail.pipelineIid) {
         return [];
       }
-      const pipeline = await handlers.pipeline({ projectPath: detail.projectPath, iid: detail.pipelineIid }).catch(() => null);
+      const pipeline = await handlers
+        .pipeline({ projectPath: detail.projectPath, iid: detail.pipelineIid })
+        .catch(() => null);
       return Promise.all(
         failedJobsOf(pipeline).map(async (job) => ({
           name: job.name,
           stage: job.stage,
-          log: await handlers.jobLog({ projectPath: detail.projectPath, jobId: job.id }).catch(() => ({ lines: [], totalLines: 0 })),
+          log: await handlers
+            .jobLog({ projectPath: detail.projectPath, jobId: job.id })
+            .catch(() => ({ lines: [], totalLines: 0 })),
         })),
       );
     },
@@ -683,12 +878,23 @@ export function createHandlers(deps: AuthDeps) {
     async agentPrompt(
       input:
         | { item: ItemRef }
-        | { job: { projectPath: string; jobId: string; name: string; webUrl: string; pipelineIid: string | null } },
+        | {
+            job: {
+              projectPath: string;
+              jobId: string;
+              name: string;
+              webUrl: string;
+              pipelineIid: string | null;
+            };
+          },
     ): Promise<{ title: string; text: string }> {
       if ("item" in input) {
         const detail = await handlers.detail(input.item);
         const failed = await handlers.failedJobLogs(detail);
-        return { title: `${detail.reference}: ${detail.title}`.slice(0, 120), text: agentPrompt(detail, failed) };
+        return {
+          title: `${detail.reference}: ${detail.title}`.slice(0, 120),
+          text: agentPrompt(detail, failed),
+        };
       }
       const { job } = input;
       const [log, pipeline] = await Promise.all([
@@ -704,7 +910,10 @@ export function createHandlers(deps: AuthDeps) {
       const connection = await requireConnection(deps);
       const lists = await cachedLists();
       const defaultProject =
-        lists.mergeRequests[0]?.projectPath ?? lists.issues[0]?.projectPath ?? lists.reviewMergeRequests[0]?.projectPath ?? null;
+        lists.mergeRequests[0]?.projectPath ??
+        lists.issues[0]?.projectPath ??
+        lists.reviewMergeRequests[0]?.projectPath ??
+        null;
       const parsed = parseReference(input.query, connection.host, defaultProject);
       if (parsed?.kind === "job") {
         const log = await handlers.jobLog({ projectPath: parsed.projectPath, jobId: parsed.jobId });
@@ -741,7 +950,9 @@ export function createHandlers(deps: AuthDeps) {
       } else {
         refs = [...lists.reviewMergeRequests, ...lists.mergeRequests, ...lists.issues];
       }
-      const unique = [...new Map(refs.map((ref) => [`${ref.kind}:${ref.projectPath}:${ref.iid}`, ref])).values()].slice(0, 8);
+      const unique = [
+        ...new Map(refs.map((ref) => [`${ref.kind}:${ref.projectPath}:${ref.iid}`, ref])).values(),
+      ].slice(0, 8);
       const details = await Promise.all(unique.map((ref) => handlers.detail(ref).catch(() => null)));
       return {
         items: details
