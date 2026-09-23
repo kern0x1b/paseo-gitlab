@@ -13,6 +13,7 @@ import {
   type ItemRef,
   type Note,
   type Person,
+  type PipelineRef,
 } from "../../shared/contract";
 import { HtmlBody } from "../html/html-body";
 import { htmlToText } from "../html/sanitize";
@@ -265,7 +266,17 @@ function Header({
   );
 }
 
-export function ItemDetail({ itemRef, onBack, ui }: { itemRef: ItemRef; onBack: () => void; ui: Ui }) {
+export function ItemDetail({
+  itemRef,
+  onBack,
+  onOpenPipeline,
+  ui,
+}: {
+  itemRef: ItemRef;
+  onBack: () => void;
+  onOpenPipeline: (ref: PipelineRef) => void;
+  ui: Ui;
+}) {
   const readDetail = useRpc(detailRpc);
   const addNote = useRpc(addNoteRpc);
   const resolve = useRpc(resolveRpc);
@@ -338,20 +349,24 @@ export function ItemDetail({ itemRef, onBack, ui }: { itemRef: ItemRef; onBack: 
           {detail.kind === "mr" ? (
             <View style={ui.styles.metaRow}>
               <Text style={ui.styles.metaLabel}>Status</Text>
+              <Text style={ui.styles.metaValue}>{mergeStatusLabel(detail.mergeStatus) ?? "—"}</Text>
+            </View>
+          ) : null}
+          {detail.pipelineIid ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Open pipeline ${detail.pipelineIid}`}
+              onPress={() => onOpenPipeline({ projectPath: detail.projectPath, iid: detail.pipelineIid! })}
+              style={({ pressed }) => [ui.styles.metaRow, pressed ? ui.styles.listRowPressed : null]}
+            >
+              <Text style={ui.styles.metaLabel}>Pipeline</Text>
               <View style={[ui.styles.row, { flex: 1 }]}>
                 <PipelineDot status={detail.pipelineStatus} theme={ui.theme} styles={ui.styles} />
-                <Text style={ui.styles.metaValue}>
-                  {[
-                    detail.pipelineStatus
-                      ? `Pipeline ${humanize(detail.pipelineStatus).toLowerCase()}`
-                      : null,
-                    mergeStatusLabel(detail.mergeStatus),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || "—"}
+                <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
+                  #{detail.pipelineIid} {detail.pipelineStatus ? humanize(detail.pipelineStatus).toLowerCase() : ""} ›
                 </Text>
               </View>
-            </View>
+            </Pressable>
           ) : null}
           <Labels labels={detail.labels} styles={ui.styles} />
         </View>

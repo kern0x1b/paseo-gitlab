@@ -4,16 +4,23 @@ import { ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useQuery } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { Text, View } from "react-native";
-import { authStatusRpc, listsRpc, type ItemRef } from "../../shared/contract";
+import { authStatusRpc, listsRpc, type ItemRef, type Job, type PipelineRef } from "../../shared/contract";
 import { openGitLabSettings } from "../plugin-client";
 import { Button, Centered, errorText, IconButton } from "./common";
 import { ItemDetail } from "./detail";
 import { ItemLists } from "./lists";
+import { JobLogView, PipelineView } from "./pipeline";
 import { LISTS_KEY, LISTS_REFRESH_MS, STATUS_KEY } from "./queries";
 import { useStyles } from "./styles";
 
+/** What the panel shows, as a stack: back pops one level. */
+type Screen =
+  | { kind: "item"; ref: ItemRef }
+  | { kind: "pipeline"; ref: PipelineRef }
+  | { kind: "job"; projectPath: string; job: Job };
+
 /**
- * The GitLab panel: the three lists, and an item opened in place of them. It lives
+ * The GitLab panel: the lists, and whatever was opened from them in their place. It lives
  * in the explorer sidebar by default and can be moved to the main panel, where the
  * same component simply gets more width.
  */
@@ -21,7 +28,10 @@ export function GitLabPanel({ theme }: PluginWorkspacePanelProps) {
   const styles = useStyles(theme);
   const readStatus = useRpc(authStatusRpc);
   const readLists = useRpc(listsRpc);
-  const [opened, setOpened] = useState<ItemRef | null>(null);
+  const [stack, setStack] = useState<Screen[]>([]);
+  const push = (screen: Screen) => setStack((current) => [...current, screen]);
+  const back = () => setStack((current) => current.slice(0, -1));
+  const top = stack[stack.length - 1];
 
   const status = useQuery({ queryKey: STATUS_KEY, queryFn: () => readStatus({}), staleTime: 5 * 60_000 });
   const connected = status.data?.connected === true;
@@ -61,14 +71,29 @@ export function GitLabPanel({ theme }: PluginWorkspacePanelProps) {
         />
       </Centered>
     );
-  } else if (opened) {
+  } else if (top?.kind === "item") {
     body = (
       <ItemDetail
-        itemRef={opened}
-        onBack={() => setOpened(null)}
+        key={`${top.ref.kind}:${top.ref.projectPath}:${top.ref.iid}`}
+        itemRef={top.ref}
+        onBack={back}
+        onOpenPipeline={(ref) => push({ kind: "pipeline", ref })}
         ui={{ theme, styles, host: status.data.host }}
       />
     );
+  } else if (top?.kind === "pipeline") {
+    body = (
+      <PipelineView
+        key={`${top.ref.projectPath}:${top.ref.iid}`}
+        pipelineRef={top.ref}
+        onBack={back}
+        onOpenLog={(projectPath, job) => push({ kind: "job", projectPath, job })}
+        onOpenPipeline={(ref) => push({ kind: "pipeline", ref })}
+        ui={{ theme, styles }}
+      />
+    );
+  } else if (top?.kind === "job") {
+    body = <JobLogView key={top.job.id} projectPath={top.projectPath} job={top.job} onBack={back} ui={{ theme, styles }} />;
   } else if (lists.isPending) {
     body = (
       <Centered styles={styles}>
@@ -106,7 +131,7 @@ export function GitLabPanel({ theme }: PluginWorkspacePanelProps) {
             styles={styles}
           />
         </View>
-        <ItemLists lists={lists.data} onOpen={setOpened} theme={theme} styles={styles} />
+        <ItemLists lists={lists.data} onOpen={(ref) => push({ kind: "item", ref })} ui={{ theme, styles }} />
       </View>
     );
   }

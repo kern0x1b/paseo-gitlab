@@ -38,11 +38,28 @@ export const ListItemSchema = ItemRefSchema.extend({
   confidential: z.boolean(),
   pipelineStatus: z.string().nullable(),
   mergeStatus: z.string().nullable(),
+  /** Why the item is in the list: an issue or MR can be yours as author, as assignee, or both. */
+  roles: z.array(z.enum(["author", "assignee"])),
+});
+
+/** A GitLab to-do: a mention, an assignment, a review request, a failed pipeline. */
+export const TodoSchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  author: PersonSchema.nullable(),
+  createdAt: z.string(),
+  body: z.string(),
+  title: z.string(),
+  reference: z.string().nullable(),
+  webUrl: z.string().nullable(),
+  /** Set when the target is an issue or MR the panel can open. */
+  target: ItemRefSchema.nullable(),
 });
 
 export const ListsSchema = z.object({
+  todos: z.array(TodoSchema),
   issues: z.array(ListItemSchema),
-  authoredMergeRequests: z.array(ListItemSchema),
+  mergeRequests: z.array(ListItemSchema),
   reviewMergeRequests: z.array(ListItemSchema),
 });
 
@@ -79,6 +96,7 @@ export const DetailSchema = ItemRefSchema.extend({
   sourceBranch: z.string().nullable(),
   targetBranch: z.string().nullable(),
   pipelineStatus: z.string().nullable(),
+  pipelineIid: z.string().nullable(),
   mergeStatus: z.string().nullable(),
   approved: z.boolean().nullable(),
   discussions: z.array(DiscussionSchema),
@@ -103,6 +121,60 @@ export const AuthStatusSchema = z.discriminatedUnion("connected", [
   }),
 ]);
 
+export const PipelineRefSchema = z.object({ projectPath: z.string(), iid: z.string() });
+
+export const JobSchema = z.object({
+  /** Global id, e.g. `gid://gitlab/Ci::Build/123`; the mutations take it as is. */
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  duration: z.number().nullable(),
+  startedAt: z.string().nullable(),
+  allowFailure: z.boolean(),
+  manual: z.boolean(),
+  retryable: z.boolean(),
+  playable: z.boolean(),
+  cancelable: z.boolean(),
+  webUrl: z.string(),
+  /** A trigger job's child or multi-project pipeline. */
+  downstream: PipelineRefSchema.extend({ status: z.string() }).nullable(),
+});
+
+export const StageSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  jobs: z.array(JobSchema),
+});
+
+export const PipelineSchema = PipelineRefSchema.extend({
+  id: z.string(),
+  status: z.string(),
+  statusLabel: z.string().nullable(),
+  ref: z.string(),
+  sha: z.string(),
+  duration: z.number().nullable(),
+  createdAt: z.string(),
+  finishedAt: z.string().nullable(),
+  user: PersonSchema.nullable(),
+  webUrl: z.string(),
+  retryable: z.boolean(),
+  cancelable: z.boolean(),
+  stages: z.array(StageSchema),
+});
+
+export const LogColorSchema = z.enum(["red", "green", "yellow", "blue", "magenta", "cyan", "gray"]);
+
+export const LogLineSchema = z.object({
+  /** Set for a `section_start` marker: the line is the section's title. */
+  section: z.boolean(),
+  segments: z.array(z.object({ text: z.string(), color: LogColorSchema.nullable(), bold: z.boolean() })),
+});
+
+export const JobLogSchema = z.object({
+  lines: z.array(LogLineSchema),
+  totalLines: z.number(),
+});
+
 export type Person = z.output<typeof PersonSchema>;
 export type Label = z.output<typeof LabelSchema>;
 export type ItemKind = z.output<typeof ItemKindSchema>;
@@ -113,6 +185,14 @@ export type Note = z.output<typeof NoteSchema>;
 export type Discussion = z.output<typeof DiscussionSchema>;
 export type Detail = z.output<typeof DetailSchema>;
 export type AuthStatus = z.output<typeof AuthStatusSchema>;
+export type Todo = z.output<typeof TodoSchema>;
+export type PipelineRef = z.output<typeof PipelineRefSchema>;
+export type Job = z.output<typeof JobSchema>;
+export type Stage = z.output<typeof StageSchema>;
+export type Pipeline = z.output<typeof PipelineSchema>;
+export type LogColor = z.output<typeof LogColorSchema>;
+export type LogLine = z.output<typeof LogLineSchema>;
+export type JobLog = z.output<typeof JobLogSchema>;
 
 export const authStatusRpc = defineRpc({
   name: "auth.status",
@@ -175,5 +255,35 @@ export const imageRpc = defineRpc({
 export const clientLogRpc = defineRpc({
   name: "client.log",
   input: z.object({ message: z.string().max(2000) }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const pipelineRpc = defineRpc({
+  name: "gitlab.pipeline",
+  input: PipelineRefSchema,
+  output: PipelineSchema,
+});
+
+export const jobLogRpc = defineRpc({
+  name: "gitlab.job.log",
+  input: z.object({ projectPath: z.string(), jobId: z.string() }),
+  output: JobLogSchema,
+});
+
+export const jobActionRpc = defineRpc({
+  name: "gitlab.job.action",
+  input: z.object({ jobId: z.string(), action: z.enum(["retry", "play", "cancel"]) }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const pipelineActionRpc = defineRpc({
+  name: "gitlab.pipeline.action",
+  input: z.object({ pipelineId: z.string(), action: z.enum(["retry", "cancel"]) }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const todoDoneRpc = defineRpc({
+  name: "gitlab.todo.done",
+  input: z.object({ id: z.string() }),
   output: z.object({ ok: z.literal(true) }),
 });

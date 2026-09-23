@@ -9,8 +9,13 @@ import {
   clientLogRpc,
   detailRpc,
   imageRpc,
+  jobActionRpc,
+  jobLogRpc,
   listsRpc,
+  pipelineActionRpc,
+  pipelineRpc,
   resolveRpc,
+  todoDoneRpc,
 } from "./shared/contract";
 
 /** Server entry: the token and every GitLab request stay on this side. */
@@ -25,6 +30,11 @@ export default function contribute(server: PluginServerContext) {
   server.handle(addNoteRpc, (input) => handlers.addNote(input));
   server.handle(resolveRpc, (input) => handlers.resolve(input));
   server.handle(imageRpc, (input) => handlers.image(input));
+  server.handle(pipelineRpc, (input) => handlers.pipeline(input));
+  server.handle(jobLogRpc, (input) => handlers.jobLog(input));
+  server.handle(jobActionRpc, (input) => handlers.jobAction(input));
+  server.handle(pipelineActionRpc, (input) => handlers.pipelineAction(input));
+  server.handle(todoDoneRpc, (input) => handlers.todoDone(input));
   server.handle(clientLogRpc, ({ message }) => {
     console.error(`[gitlab client] ${message}`);
     return { ok: true as const };

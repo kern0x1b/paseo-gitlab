@@ -1,41 +1,42 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/react-native";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { ItemRef, ListItem, Lists } from "../../shared/contract";
-import { Badge, Labels, PipelineDot } from "./common";
-import { mergeStatusLabel, shortReference, timeAgo } from "./format";
+import { todoDoneRpc, type ItemRef, type ListItem, type Lists, type Todo } from "../../shared/contract";
+import { Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
+import { humanize, mergeStatusLabel, shortReference, timeAgo } from "./format";
+import { LISTS_KEY } from "./queries";
 import type { Styles } from "./styles";
 
-type TabId = "issues" | "authored" | "review";
+type TabId = "todos" | "issues" | "mrs" | "review";
 
-const TABS: { id: TabId; label: string; pick: (lists: Lists) => ListItem[]; empty: string }[] = [
-  { id: "issues", label: "Issues", pick: (lists) => lists.issues, empty: "No open issues assigned to you." },
-  {
-    id: "authored",
-    label: "My MRs",
-    pick: (lists) => lists.authoredMergeRequests,
-    empty: "You have no open merge requests.",
-  },
-  {
-    id: "review",
-    label: "Review",
-    pick: (lists) => lists.reviewMergeRequests,
-    empty: "Nobody is waiting for your review.",
-  },
-];
+type Ui = { theme: PluginTheme; styles: Styles };
 
-function Row({
-  item,
-  onOpen,
-  theme,
-  styles,
-}: {
-  item: ListItem;
-  onOpen: (ref: ItemRef) => void;
-  theme: PluginTheme;
-  styles: Styles;
-}) {
+const TODO_ACTIONS: Record<string, string> = {
+  assigned: "assigned you",
+  mentioned: "mentioned you",
+  directly_addressed: "addressed you",
+  build_failed: "pipeline failed",
+  marked: "to-do you added",
+  approval_required: "needs your approval",
+  unmergeable: "can no longer merge",
+  review_requested: "requested your review",
+  review_submitted: "reviewed",
+  merge_train_removed: "removed from the merge train",
+  member_access_requested: "requested access",
+};
+
+function todoAction(action: string): string {
+  return TODO_ACTIONS[action] ?? humanize(action).toLowerCase();
+}
+
+function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: ItemRef) => void; ui: Ui }) {
+  const { styles, theme } = ui;
   const mergeStatus = item.kind === "mr" ? mergeStatusLabel(item.mergeStatus) : null;
+  // Only worth saying when it is not the obvious one: an issue you merely filed.
+  const authorOnly = item.kind === "issue" && item.roles.length === 1 && item.roles[0] === "author";
   return (
     <Pressable
       accessibilityRole="button"
@@ -52,6 +53,7 @@ function Row({
         {item.confidential ? (
           <Badge label="Confidential" styles={styles} color={theme.colors.statusWarning} />
         ) : null}
+        {authorOnly ? <Badge label="Author" styles={styles} /> : null}
         <View style={styles.spacer} />
         <Text style={styles.small}>
           {item.userNotesCount > 0 ? `💬 ${item.userNotesCount} · ` : ""}
@@ -69,23 +71,130 @@ function Row({
   );
 }
 
-export function ItemLists({
-  lists,
+function TodoRow({
+  todo,
   onOpen,
-  theme,
-  styles,
+  onDone,
+  busy,
+  ui,
 }: {
-  lists: Lists;
+  todo: Todo;
   onOpen: (ref: ItemRef) => void;
-  theme: PluginTheme;
-  styles: Styles;
+  onDone: () => void;
+  busy: boolean;
+  ui: Ui;
 }) {
-  // Review requests are what someone else is blocked on, so they win the first look when there are any.
-  const [tab, setTab] = useState<TabId>(() =>
-    lists.reviewMergeRequests.length > 0 ? "review" : lists.issues.length > 0 ? "issues" : "authored",
+  const { styles, theme } = ui;
+  const open = () => {
+    if (todo.target) {
+      onOpen(todo.target);
+    } else if (todo.webUrl) {
+      void openExternalUrl(todo.webUrl);
+    }
+  };
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${todo.reference ?? ""} ${todo.title}`}
+      onPress={open}
+      style={({ pressed }) => [styles.listRow, pressed ? styles.listRowPressed : null]}
+    >
+      <View style={styles.row}>
+        <Text style={styles.muted} numberOfLines={1}>
+          {todo.author ? `@${todo.author.username} ` : ""}
+          {todoAction(todo.action)}
+        </Text>
+        <View style={styles.spacer} />
+        <Text style={styles.small}>{timeAgo(todo.createdAt)}</Text>
+        <IconButton
+          icon="Check"
+          label="Mark as done"
+          onPress={onDone}
+          disabled={busy}
+          theme={theme}
+          styles={styles}
+        />
+      </View>
+      <Text style={styles.listTitle} numberOfLines={2}>
+        {todo.reference ? `${shortReference(todo.reference)} · ` : ""}
+        {todo.title}
+      </Text>
+      {todo.body && todo.body !== todo.title ? (
+        <Text style={styles.small} numberOfLines={2}>
+          {todo.body}
+        </Text>
+      ) : null}
+    </Pressable>
   );
+}
+
+function Todos({ todos, onOpen, ui }: { todos: Todo[]; onOpen: (ref: ItemRef) => void; ui: Ui }) {
+  const markDone = useRpc(todoDoneRpc);
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const done = useMutation({
+    mutationFn: (id: string) => markDone({ id }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: LISTS_KEY }),
+    onError: (error) => toast.error(errorText(error)),
+  });
+  return (
+    <>
+      {todos.map((todo, index) => (
+        <Fragment key={todo.id}>
+          {index > 0 ? <View style={ui.styles.divider} /> : null}
+          <TodoRow
+            todo={todo}
+            onOpen={onOpen}
+            onDone={() => done.mutate(todo.id)}
+            busy={done.isPending && done.variables === todo.id}
+            ui={ui}
+          />
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+const TABS: { id: TabId; label: string; count: (lists: Lists) => number; empty: string }[] = [
+  { id: "todos", label: "To-Do", count: (lists) => lists.todos.length, empty: "No pending to-dos." },
+  {
+    id: "issues",
+    label: "Issues",
+    count: (lists) => lists.issues.length,
+    empty: "No open issues assigned to you or filed by you.",
+  },
+  {
+    id: "mrs",
+    label: "My MRs",
+    count: (lists) => lists.mergeRequests.length,
+    empty: "You have no open merge requests.",
+  },
+  {
+    id: "review",
+    label: "Review",
+    count: (lists) => lists.reviewMergeRequests.length,
+    empty: "Nobody is waiting for your review.",
+  },
+];
+
+function firstTab(lists: Lists): TabId {
+  // Whatever someone else is blocked on wins the first look.
+  if (lists.reviewMergeRequests.length > 0) {
+    return "review";
+  }
+  if (lists.todos.length > 0) {
+    return "todos";
+  }
+  return lists.mergeRequests.length > 0 ? "mrs" : "issues";
+}
+
+export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: ItemRef) => void; ui: Ui }) {
+  const { styles } = ui;
+  const [tab, setTab] = useState<TabId>(() => firstTab(lists));
   const current = TABS.find((candidate) => candidate.id === tab) ?? TABS[0]!;
-  const items = current.pick(lists);
+  const items =
+    tab === "issues" ? lists.issues : tab === "mrs" ? lists.mergeRequests : lists.reviewMergeRequests;
+  const empty = current.count(lists) === 0;
 
   return (
     <View style={{ gap: 12 }}>
@@ -100,23 +209,25 @@ export function ItemLists({
               onPress={() => setTab(candidate.id)}
               style={[styles.tab, active ? styles.tabActive : null]}
             >
-              <Text style={[styles.tabLabel, active ? styles.tabLabelActive : null]}>
-                {candidate.label} {candidate.pick(lists).length}
+              <Text style={[styles.tabLabel, active ? styles.tabLabelActive : null]} numberOfLines={1}>
+                {candidate.label} {candidate.count(lists)}
               </Text>
             </Pressable>
           );
         })}
       </View>
       <View style={styles.card}>
-        {items.length === 0 ? (
+        {empty ? (
           <View style={styles.cardBody}>
             <Text style={styles.muted}>{current.empty}</Text>
           </View>
+        ) : tab === "todos" ? (
+          <Todos todos={lists.todos} onOpen={onOpen} ui={ui} />
         ) : (
           items.map((item, index) => (
             <Fragment key={`${item.kind}:${item.reference}`}>
               {index > 0 ? <View style={styles.divider} /> : null}
-              <Row item={item} onOpen={onOpen} theme={theme} styles={styles} />
+              <ItemRow item={item} onOpen={onOpen} ui={ui} />
             </Fragment>
           ))
         )}

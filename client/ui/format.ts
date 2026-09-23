@@ -84,3 +84,23 @@ export function initials(name: string): string {
     "?"
   );
 }
+
+/** Statuses that will still change on their own, so the view should keep polling. */
+export function isActive(status: string | null | undefined): boolean {
+  return status != null && RUNNING.has(status.toUpperCase());
+}
+
+export function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
+}
+
+export function shortSha(sha: string): string | null {
+  return sha ? sha.slice(0, 8) : null;
+}
