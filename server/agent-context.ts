@@ -100,6 +100,19 @@ export function agentPrompt(detail: Detail, failedJobs: FailedJobLog[]): string 
   return `${task}\n\n${itemContext(detail, failedJobs)}`;
 }
 
+/** Merge conflicts have no GitLab API: the agent resolves them in its checkout and pushes. */
+export function conflictPrompt(detail: Detail): string {
+  const source = detail.sourceBranch ?? "the source branch";
+  const target = detail.targetBranch ?? "the target branch";
+  return [
+    `Merge request ${detail.reference} "${detail.title}" has merge conflicts with ${target}.`,
+    detail.webUrl,
+    "",
+    `Please resolve them: fetch origin, check out ${source}, merge origin/${target} into it, resolve every conflict keeping the intent of both sides, run the affected tests, commit and push ${source}.`,
+    "Do not force-push. If a conflict needs a decision you cannot make from the code, stop and ask me.",
+  ].join("\n");
+}
+
 export function jobPrompt(jobName: string, jobUrl: string, pipeline: Pipeline | null, log: JobLog): string {
   const where = pipeline ? ` in pipeline #${pipeline.iid} on ${pipeline.ref}` : "";
   return `Please find out why the job "${jobName}"${where} failed and fix it.\n${jobUrl}\n\nLast lines of its log:\n\`\`\`\n${logTail(log, 200)}\n\`\`\``;

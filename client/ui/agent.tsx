@@ -13,6 +13,7 @@ type Ui = { theme: PluginTheme; styles: Styles };
 
 export type AgentSubject =
   | { item: ItemRef }
+  | { conflicts: ItemRef }
   | { job: { projectPath: string; jobId: string; name: string; webUrl: string; pipelineIid: string | null } };
 
 interface AgentChoice {
@@ -112,7 +113,9 @@ function AgentPicker({
     <Modal title="Send to an agent" open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <Modal.Content>
         <Text style={styles.muted}>
-          The agent gets the link, the description, every unresolved thread and the log of each failed job.
+          {"conflicts" in subject
+            ? "The agent merges the target branch into the source branch in its checkout, resolves the conflicts and pushes."
+            : "The agent gets the link, the description, every unresolved thread and the log of each failed job."}
         </Text>
         <View style={styles.card}>
           {agents.isPending ? (
@@ -167,22 +170,29 @@ function AgentPicker({
 export function SendToAgentButton({
   workspaceId,
   subject,
+  label,
   ui,
 }: {
   workspaceId: string;
   subject: AgentSubject;
+  /** A labelled button instead of the robot icon. */
+  label?: string;
   ui: Ui;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <IconButton
-        icon="Bot"
-        label="Send to an agent"
-        onPress={() => setOpen(true)}
-        theme={ui.theme}
-        styles={ui.styles}
-      />
+      {label ? (
+        <Button label={label} onPress={() => setOpen(true)} styles={ui.styles} theme={ui.theme} />
+      ) : (
+        <IconButton
+          icon="Bot"
+          label="Send to an agent"
+          onPress={() => setOpen(true)}
+          theme={ui.theme}
+          styles={ui.styles}
+        />
+      )}
       <AgentPicker
         open={open}
         onClose={() => setOpen(false)}

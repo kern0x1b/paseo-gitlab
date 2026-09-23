@@ -29,6 +29,7 @@ import { fetchImage } from "./images";
 import { MAX_LOG_LINES, parseJobLog } from "./log";
 import {
   agentPrompt,
+  conflictPrompt,
   failedJobsOf,
   itemContext,
   jobPrompt,
@@ -880,6 +881,7 @@ export function createHandlers(deps: AuthDeps) {
     async agentPrompt(
       input:
         | { item: ItemRef }
+        | { conflicts: ItemRef }
         | {
             job: {
               projectPath: string;
@@ -896,6 +898,13 @@ export function createHandlers(deps: AuthDeps) {
         return {
           title: `${detail.reference}: ${detail.title}`.slice(0, 120),
           text: agentPrompt(detail, failed),
+        };
+      }
+      if ("conflicts" in input) {
+        const detail = await handlers.detail(input.conflicts);
+        return {
+          title: `Resolve conflicts in ${detail.reference}`.slice(0, 120),
+          text: conflictPrompt(detail),
         };
       }
       const { job } = input;

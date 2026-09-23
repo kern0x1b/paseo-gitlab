@@ -11,6 +11,7 @@ import {
   type Detail,
   type Reaction,
 } from "../../shared/contract";
+import { SendToAgentButton } from "./agent";
 import { Badge, Button, ConfirmButton } from "./common";
 import type { Styles } from "./styles";
 
@@ -102,7 +103,15 @@ export function Reactions({
 }
 
 /** Approve, merge, auto-merge and rebase, each shown only when GitLab would accept it. */
-export function MergePanel({ detail, write, ui }: { detail: Detail; write: Write; ui: Ui }) {
+export function MergePanel({
+  detail,
+  write,
+  ui,
+}: {
+  detail: Detail;
+  write: Write;
+  ui: Ui & { workspaceId?: string };
+}) {
   const { styles, theme } = ui;
   const runAction = useRpc(mergeRequestActionRpc);
   const [busy, setBusy] = useState<string | null>(null);
@@ -134,6 +143,23 @@ export function MergePanel({ detail, write, ui }: { detail: Detail; write: Write
             <Badge label="Auto-merge on" styles={styles} color={theme.colors.statusSuccess} />
           ) : null}
         </View>
+        {detail.hasConflicts ? (
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            <Badge label="Merge conflicts" styles={styles} color={theme.colors.statusDanger} />
+            <Text style={[styles.small, { flex: 1 }]}>
+              {detail.sourceBranch ?? "The source branch"} does not merge cleanly into{" "}
+              {detail.targetBranch ?? "the target branch"}.
+            </Text>
+            {ui.workspaceId ? (
+              <SendToAgentButton
+                workspaceId={ui.workspaceId}
+                subject={{ conflicts: { kind: "mr", projectPath: detail.projectPath, iid: detail.iid } }}
+                label="Resolve with agent"
+                ui={ui}
+              />
+            ) : null}
+          </View>
+        ) : null}
         <View style={[styles.row, { flexWrap: "wrap" }]}>
           {detail.canApprove || approvedByMe ? (
             <ConfirmButton

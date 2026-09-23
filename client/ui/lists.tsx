@@ -219,7 +219,7 @@ const TABS: { id: TabId; label: string; count: (lists: Lists) => number; empty: 
   },
   {
     id: "mrs",
-    label: "My MRs",
+    label: "MRs",
     count: (lists) => lists.mergeRequests.length,
     empty: "You have no open merge requests.",
   },

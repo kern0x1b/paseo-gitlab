@@ -142,6 +142,8 @@ export const DetailSchema = ItemRefSchema.extend({
   /** Pushing to the source branch is what applying a suggestion or rebasing needs. */
   canPush: z.boolean(),
   mergeable: z.boolean(),
+  /** The source branch cannot merge cleanly into the target; GitLab offers no API to resolve it. */
+  hasConflicts: z.boolean(),
   autoMergeEnabled: z.boolean(),
   autoMergeStrategies: z.array(z.string()),
   shouldBeRebased: z.boolean(),
@@ -467,6 +469,7 @@ export const agentPromptRpc = defineRpc({
   name: "gitlab.agent.prompt",
   input: z.union([
     z.object({ item: ItemRefSchema }),
+    z.object({ conflicts: ItemRefSchema }),
     z.object({
       job: z.object({
         projectPath: z.string(),

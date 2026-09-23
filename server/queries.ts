@@ -111,7 +111,7 @@ query PaseoGitLabMergeRequest($path: ID!, $iid: String!) {
       }
       diffRefs { baseSha headSha startSha }
       approvedBy { nodes { username } }
-      mergeable autoMergeEnabled availableAutoMergeStrategies shouldBeRebased rebaseInProgress
+      mergeable conflicts autoMergeEnabled availableAutoMergeStrategies shouldBeRebased rebaseInProgress
       awardEmoji { nodes { name emoji user { username } } }
       headPipeline { iid status }
       author { ${PERSON} }
@@ -405,6 +405,7 @@ export interface RawDetail {
   } | null;
   approvedBy?: Nodes<{ username: string }>;
   mergeable?: boolean | null;
+  conflicts?: boolean | null;
   autoMergeEnabled?: boolean | null;
   availableAutoMergeStrategies?: string[] | null;
   shouldBeRebased?: boolean | null;
@@ -556,6 +557,7 @@ export function toDetail(kind: ItemKind, raw: RawDetail, viewer: string): Detail
     canMerge: raw.userPermissions?.canMerge ?? false,
     canPush: raw.userPermissions?.canPush ?? false,
     mergeable: raw.mergeable ?? false,
+    hasConflicts: raw.conflicts ?? false,
     autoMergeEnabled: raw.autoMergeEnabled ?? false,
     autoMergeStrategies: raw.availableAutoMergeStrategies ?? [],
     shouldBeRebased: raw.shouldBeRebased ?? false,
