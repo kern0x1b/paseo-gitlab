@@ -2,6 +2,7 @@ import type { PluginRpcContract } from "@getpaseo/plugin";
 import { useRpc as useSdkRpc, useWorkspace } from "@getpaseo/plugin/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import React, { createContext, useCallback, useContext, useSyncExternalStore } from "react";
+import { View } from "react-native";
 import type { input as ZodInput, ZodType } from "zod";
 import { accountsRpc } from "../shared/contract";
 
@@ -121,7 +122,13 @@ export function AccountScope({ workspaceId, children }: { workspaceId: string; c
     (chosen && hosts.includes(chosen) ? chosen : null) ?? fromRemote ?? accounts.data?.active ?? null;
   return (
     <AccountContext.Provider value={{ hosts, account, fromRemote, workspaceId }}>
-      <QueryClientProvider client={cacheFor(account ?? "")}>{children}</QueryClientProvider>
+      <QueryClientProvider client={cacheFor(account ?? "")}>
+        {/* Keyed by account: switching GitLab remounts the subtree so every query
+            starts fresh, instead of carrying one account's cached status into another. */}
+        <View key={account ?? ""} style={{ flex: 1 }}>
+          {children}
+        </View>
+      </QueryClientProvider>
     </AccountContext.Provider>
   );
 }
