@@ -1,6 +1,8 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { connect, defaultAuthDeps, disconnect } from "./server/auth";
 import { createHandlers } from "./server/handlers";
+import { readAccounts, withAccount } from "./server/state";
+import { hostForDirectory } from "./server/workspace";
 import {
   addCodeCommentRpc,
   addDiffNoteRpc,
@@ -27,6 +29,7 @@ import {
   authDisconnectRpc,
   authStatusRpc,
   clientLogRpc,
+  accountsRpc,
   aheadBehindRpc,
   branchesRpc,
   commitsRpc,
@@ -62,60 +65,74 @@ import {
 export default function contribute(server: PluginServerContext) {
   const deps = defaultAuthDeps();
   const handlers = createHandlers(deps);
-  server.handle(authStatusRpc, handlers.status);
-  server.handle(authConnectRpc, (input) => connect(deps, input));
-  server.handle(authDisconnectRpc, () => disconnect(deps));
-  server.handle(listsRpc, handlers.lists);
-  server.handle(detailRpc, (input) => handlers.detail(input));
-  server.handle(addNoteRpc, (input) => handlers.addNote(input));
-  server.handle(updateNoteRpc, (input) => handlers.updateNote(input));
-  server.handle(deleteNoteRpc, (input) => handlers.deleteNote(input));
-  server.handle(updateItemRpc, (input) => handlers.updateItem(input));
-  server.handle(setPeopleRpc, (input) => handlers.setPeople(input));
-  server.handle(setLabelsRpc, (input) => handlers.setLabels(input));
-  server.handle(searchUsersRpc, (input) => handlers.searchUsers(input));
-  server.handle(searchLabelsRpc, (input) => handlers.searchLabels(input));
-  server.handle(diffsRpc, (input) => handlers.diffs(input));
-  server.handle(addDiffNoteRpc, (input) => handlers.addDiffNote(input));
-  server.handle(workspaceRpc, (input) => handlers.workspace(input));
-  server.handle(versionsRpc, (input) => handlers.versions(input));
-  server.handle(commitsRpc, (input) => handlers.commits(input));
-  server.handle(scopedDiffsRpc, (input) => handlers.scopedDiffs(input));
-  server.handle(fileLinesRpc, (input) => handlers.fileLines(input));
-  server.handle(repoTreeRpc, (input) => handlers.repoTree(input));
-  server.handle(refCommitsRpc, (input) => handlers.refCommits(input));
-  server.handle(branchesRpc, (input) => handlers.branches(input));
-  server.handle(aheadBehindRpc, (input) => handlers.aheadBehind(input));
-  server.handle(createBranchRpc, (input) => handlers.createBranch(input));
-  server.handle(deleteBranchRpc, (input) => handlers.deleteBranch(input));
-  server.handle(addCodeCommentRpc, (input) => handlers.addCodeComment(input));
-  server.handle(referenceSearchRpc, (input) => handlers.referenceSearch(input));
-  server.handle(markdownPreviewRpc, (input) => handlers.markdownPreview(input));
-  server.handle(uploadRpc, (input) => handlers.upload(input));
-  server.handle(searchRpc, (input) => handlers.search(input));
-  server.handle(savedQueriesRpc, () => handlers.savedQueries());
-  server.handle(saveQueryRpc, (input) => handlers.saveQuery(input));
-  server.handle(deleteQueryRpc, (input) => handlers.deleteQuery(input));
-  server.handle(runPipelineRpc, (input) => handlers.runPipeline(input));
-  server.handle(mergeRequestActionRpc, (input) => handlers.mergeRequestAction(input));
-  server.handle(applySuggestionRpc, (input) => handlers.applySuggestion(input));
-  server.handle(toggleReactionRpc, (input) => handlers.toggleReaction(input));
-  server.handle(draftsRpc, (input) => handlers.drafts(input));
-  server.handle(addDraftRpc, (input) => handlers.addDraft(input));
-  server.handle(deleteDraftRpc, (input) => handlers.deleteDraft(input));
-  server.handle(submitReviewRpc, (input) => handlers.submitReview(input));
-  server.handle(createIssueRpc, (input) => handlers.createIssue(input));
-  server.handle(createMergeRequestRpc, (input) => handlers.createMergeRequest(input));
-  server.handle(agentPromptRpc, (input) => handlers.agentPrompt(input));
-  server.handle(attachmentSearchRpc, (input) => handlers.attachmentSearch(input));
-  server.handle(resolveRpc, (input) => handlers.resolve(input));
-  server.handle(imageRpc, (input) => handlers.image(input));
-  server.handle(pipelineRpc, (input) => handlers.pipeline(input));
-  server.handle(jobLogRpc, (input) => handlers.jobLog(input));
-  server.handle(jobActionRpc, (input) => handlers.jobAction(input));
-  server.handle(pipelineActionRpc, (input) => handlers.pipelineAction(input));
-  server.handle(todoDoneRpc, (input) => handlers.todoDone(input));
-  server.handle(clientLogRpc, ({ message }) => {
+  // Runs each request as the account it names, and hands the handler its input without that field.
+  const handle: PluginServerContext["handle"] = (contract, handler) =>
+    server.handle(contract, (input, context) => {
+      const { account, ...rest } = input as { account?: string };
+      return withAccount(account, () => handler(rest as typeof input, context));
+    });
+  handle(accountsRpc, async (input) => {
+    const { hosts, active } = readAccounts();
+    return {
+      hosts,
+      active,
+      forDirectory: input.directory ? await hostForDirectory(input.directory, hosts) : null,
+    };
+  });
+  handle(authStatusRpc, handlers.status);
+  handle(authConnectRpc, (input) => connect(deps, input));
+  handle(authDisconnectRpc, () => disconnect(deps));
+  handle(listsRpc, handlers.lists);
+  handle(detailRpc, (input) => handlers.detail(input));
+  handle(addNoteRpc, (input) => handlers.addNote(input));
+  handle(updateNoteRpc, (input) => handlers.updateNote(input));
+  handle(deleteNoteRpc, (input) => handlers.deleteNote(input));
+  handle(updateItemRpc, (input) => handlers.updateItem(input));
+  handle(setPeopleRpc, (input) => handlers.setPeople(input));
+  handle(setLabelsRpc, (input) => handlers.setLabels(input));
+  handle(searchUsersRpc, (input) => handlers.searchUsers(input));
+  handle(searchLabelsRpc, (input) => handlers.searchLabels(input));
+  handle(diffsRpc, (input) => handlers.diffs(input));
+  handle(addDiffNoteRpc, (input) => handlers.addDiffNote(input));
+  handle(workspaceRpc, (input) => handlers.workspace(input));
+  handle(versionsRpc, (input) => handlers.versions(input));
+  handle(commitsRpc, (input) => handlers.commits(input));
+  handle(scopedDiffsRpc, (input) => handlers.scopedDiffs(input));
+  handle(fileLinesRpc, (input) => handlers.fileLines(input));
+  handle(repoTreeRpc, (input) => handlers.repoTree(input));
+  handle(refCommitsRpc, (input) => handlers.refCommits(input));
+  handle(branchesRpc, (input) => handlers.branches(input));
+  handle(aheadBehindRpc, (input) => handlers.aheadBehind(input));
+  handle(createBranchRpc, (input) => handlers.createBranch(input));
+  handle(deleteBranchRpc, (input) => handlers.deleteBranch(input));
+  handle(addCodeCommentRpc, (input) => handlers.addCodeComment(input));
+  handle(referenceSearchRpc, (input) => handlers.referenceSearch(input));
+  handle(markdownPreviewRpc, (input) => handlers.markdownPreview(input));
+  handle(uploadRpc, (input) => handlers.upload(input));
+  handle(searchRpc, (input) => handlers.search(input));
+  handle(savedQueriesRpc, () => handlers.savedQueries());
+  handle(saveQueryRpc, (input) => handlers.saveQuery(input));
+  handle(deleteQueryRpc, (input) => handlers.deleteQuery(input));
+  handle(runPipelineRpc, (input) => handlers.runPipeline(input));
+  handle(mergeRequestActionRpc, (input) => handlers.mergeRequestAction(input));
+  handle(applySuggestionRpc, (input) => handlers.applySuggestion(input));
+  handle(toggleReactionRpc, (input) => handlers.toggleReaction(input));
+  handle(draftsRpc, (input) => handlers.drafts(input));
+  handle(addDraftRpc, (input) => handlers.addDraft(input));
+  handle(deleteDraftRpc, (input) => handlers.deleteDraft(input));
+  handle(submitReviewRpc, (input) => handlers.submitReview(input));
+  handle(createIssueRpc, (input) => handlers.createIssue(input));
+  handle(createMergeRequestRpc, (input) => handlers.createMergeRequest(input));
+  handle(agentPromptRpc, (input) => handlers.agentPrompt(input));
+  handle(attachmentSearchRpc, (input) => handlers.attachmentSearch(input));
+  handle(resolveRpc, (input) => handlers.resolve(input));
+  handle(imageRpc, (input) => handlers.image(input));
+  handle(pipelineRpc, (input) => handlers.pipeline(input));
+  handle(jobLogRpc, (input) => handlers.jobLog(input));
+  handle(jobActionRpc, (input) => handlers.jobAction(input));
+  handle(pipelineActionRpc, (input) => handlers.pipelineAction(input));
+  handle(todoDoneRpc, (input) => handlers.todoDone(input));
+  handle(clientLogRpc, ({ message }) => {
     console.error(`[gitlab client] ${message}`);
     return { ok: true as const };
   });

@@ -1,4 +1,5 @@
-import { usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { usePaseo } from "@getpaseo/plugin/client";
+import { useRpc } from "../account";
 import { Modal, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";

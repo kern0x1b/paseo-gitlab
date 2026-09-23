@@ -101,11 +101,11 @@ describe("connect", () => {
     assert.equal(setup.secrets.entries.size, 0);
   });
 
-  it("drops the old host's token when switching hosts", async () => {
+  it("keeps each host's token when a second GitLab is added", async () => {
     const setup = deps(fakeGitLab().fetchImpl);
     await connect(setup.value, { host: HOST, token: "glpat-one" });
     await connect(setup.value, { host: "https://other.example.com", token: "glpat-two" });
-    assert.deepEqual([...setup.secrets.entries.keys()], ["other.example.com"]);
+    assert.deepEqual([...setup.secrets.entries.keys()], ["gitlab.example.com", "other.example.com"]);
   });
 });
 

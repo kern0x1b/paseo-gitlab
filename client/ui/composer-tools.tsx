@@ -1,4 +1,4 @@
-import { useRpc } from "@getpaseo/plugin/client";
+import { useRpc } from "../account";
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";

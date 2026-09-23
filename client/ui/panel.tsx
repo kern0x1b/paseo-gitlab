@@ -1,5 +1,6 @@
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { useRpc } from "@getpaseo/plugin/client";
+import { AccountScope, useRpc } from "../account";
+import { AccountSwitch } from "./account-switch";
 import { ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useQuery } from "@tanstack/react-query";
 import React, { useState } from "react";
@@ -29,7 +30,15 @@ type Screen =
  * in the explorer sidebar by default and can be moved to the main panel, where the
  * same component simply gets more width.
  */
-export function GitLabPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
+export function GitLabPanel(props: PluginWorkspacePanelProps) {
+  return (
+    <AccountScope workspaceId={props.workspaceId}>
+      <GitLabPanelContent {...props} />
+    </AccountScope>
+  );
+}
+
+function GitLabPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const styles = useStyles(theme);
   const readStatus = useRpc(authStatusRpc);
   const readLists = useRpc(listsRpc);
@@ -148,9 +157,7 @@ export function GitLabPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
     body = (
       <View style={{ gap: 8 }}>
         <View style={styles.row}>
-          <Text style={styles.muted} numberOfLines={1}>
-            @{status.data.user.username}
-          </Text>
+          <AccountSwitch username={status.data.user.username} ui={{ theme, styles }} />
           <View style={styles.spacer} />
           <IconButton
             icon="Plus"

@@ -1,5 +1,6 @@
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { openExternalUrl, usePaseo, useRpc, useWorkspace } from "@getpaseo/plugin/client";
+import { openExternalUrl, usePaseo, useWorkspace } from "@getpaseo/plugin/client";
+import { AccountScope, useRpc } from "../account";
 import { Icon, Modal, ScrollView, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery } from "@tanstack/react-query";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -1133,7 +1134,15 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
  * on the left, every file's diff on the right, and comments collected into a
  * review that is then sent to one of your agents or published to GitLab.
  */
-export function DiffPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
+export function DiffPanel(props: PluginWorkspacePanelProps) {
+  return (
+    <AccountScope workspaceId={props.workspaceId}>
+      <DiffPanelContent {...props} />
+    </AccountScope>
+  );
+}
+
+function DiffPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const styles = useStyles(theme);
   const readStatus = useRpc(authStatusRpc);
   const status = useQuery({ queryKey: STATUS_KEY, queryFn: () => readStatus({}), staleTime: 5 * 60_000 });

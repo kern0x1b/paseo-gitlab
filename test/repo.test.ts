@@ -107,3 +107,39 @@ describe("repository", () => {
     assert.match(calls[1]!.url.pathname, /branches\/feature%2Fx$/);
   });
 });
+
+describe("accounts", () => {
+  it("runs a request as the account it names and falls back to the default", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "paseo-gitlab-"));
+    const state = await import("../server/state");
+    state.writeHost("https://one.example.com");
+    state.writeHost("https://two.example.com");
+    assert.deepEqual(state.readAccounts(), {
+      hosts: ["https://one.example.com", "https://two.example.com"],
+      active: "https://two.example.com",
+    });
+    assert.equal(
+      state.withAccount("https://one.example.com", () => state.readHost()),
+      "https://one.example.com",
+    );
+    assert.equal(state.readHost(), "https://two.example.com");
+    state.withAccount("https://two.example.com", () => state.clearHost());
+    assert.deepEqual(state.readAccounts(), {
+      hosts: ["https://one.example.com"],
+      active: "https://one.example.com",
+    });
+  });
+
+  it("matches a checkout's origin to a connected GitLab", async () => {
+    const { hostForDirectory } = await import("../server/workspace");
+    const git = async () => "git@gitlab.two.example.com:group/project.git";
+    assert.equal(
+      await hostForDirectory("/x", ["https://gitlab.one.example.com", "https://gitlab.two.example.com"], git),
+      "https://gitlab.two.example.com",
+    );
+    assert.equal(await hostForDirectory("/x", ["https://gitlab.one.example.com"], git), null);
+  });
+});

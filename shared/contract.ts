@@ -1,5 +1,20 @@
-import { defineRpc, PluginAttachmentSearchPayloadSchema } from "@getpaseo/plugin";
+import { defineRpc as defineSdkRpc, PluginAttachmentSearchPayloadSchema } from "@getpaseo/plugin";
+import type { ZodType } from "zod";
 import { z } from "zod";
+
+/**
+ * Every RPC takes an optional `account`: the GitLab host the calling panel works
+ * with. The server runs the request as that account; without it, the default one.
+ */
+const AccountFieldSchema = z.object({ account: z.string().optional() });
+
+function defineRpc<InputSchema extends ZodType, OutputSchema extends ZodType>(definition: {
+  name: string;
+  input: InputSchema;
+  output: OutputSchema;
+}) {
+  return defineSdkRpc({ ...definition, input: z.intersection(definition.input, AccountFieldSchema) });
+}
 
 /**
  * Everything the client and the plugin server exchange. The token never appears
@@ -253,7 +268,8 @@ export type JobLog = z.output<typeof JobLogSchema>;
 
 export const authStatusRpc = defineRpc({
   name: "auth.status",
-  input: z.object({}),
+  // Settings names each account itself, one card per connected GitLab.
+  input: AccountFieldSchema,
   output: AuthStatusSchema,
 });
 
@@ -265,7 +281,8 @@ export const authConnectRpc = defineRpc({
 
 export const authDisconnectRpc = defineRpc({
   name: "auth.disconnect",
-  input: z.object({}),
+  // Settings names each account itself, one card per connected GitLab.
+  input: AccountFieldSchema,
   output: AuthStatusSchema,
 });
 
@@ -750,7 +767,12 @@ export const repoTreeRpc = defineRpc({
 
 export const refCommitsRpc = defineRpc({
   name: "gitlab.repo.commits",
-  input: z.object({ projectPath: z.string(), ref: z.string(), path: z.string().optional(), page: z.number().int().min(1) }),
+  input: z.object({
+    projectPath: z.string(),
+    ref: z.string(),
+    path: z.string().optional(),
+    page: z.number().int().min(1),
+  }),
   output: z.object({ commits: z.array(CommitSchema), more: z.boolean() }),
 });
 
@@ -788,4 +810,15 @@ export const deleteBranchRpc = defineRpc({
   name: "gitlab.repo.branch.delete",
   input: z.object({ projectPath: z.string(), name: z.string().min(1) }),
   output: z.object({ ok: z.literal(true) }),
+});
+
+export const accountsRpc = defineRpc({
+  name: "auth.accounts",
+  input: z.object({ directory: z.string().optional() }),
+  output: z.object({
+    hosts: z.array(z.string()),
+    active: z.string().nullable(),
+    /** The connected GitLab the directory's `origin` points at, if any. */
+    forDirectory: z.string().nullable(),
+  }),
 });

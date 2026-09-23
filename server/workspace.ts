@@ -60,3 +60,16 @@ export async function readCheckout(
   }
   return { branch, projectPath: parsed.path };
 }
+
+/** Which of the connected GitLabs the directory's `origin` points at. */
+export async function hostForDirectory(
+  directory: string,
+  hosts: string[],
+  git: GitRunner = runGit,
+): Promise<string | null> {
+  const remote = await git(directory, ["remote", "get-url", "origin"]);
+  const parsed = remote ? parseRemote(remote) : null;
+  return parsed
+    ? (hosts.find((host) => new URL(host).hostname.toLowerCase() === parsed.hostname) ?? null)
+    : null;
+}

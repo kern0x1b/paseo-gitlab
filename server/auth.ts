@@ -123,12 +123,8 @@ export async function connect(deps: AuthDeps, input: { host: string; token: stri
   if (status.connected && !status.token.scopes.includes(REQUIRED_SCOPE)) {
     throw new Error(`The token needs the "${REQUIRED_SCOPE}" scope to post comments and resolve threads.`);
   }
-  const previousHost = deps.readHost();
   await deps.secrets.write(accountFor(host), token);
   deps.writeHost(host);
-  if (previousHost && previousHost !== host) {
-    await deps.secrets.remove(accountFor(previousHost));
-  }
   return status;
 }
 
@@ -138,5 +134,5 @@ export async function disconnect(deps: AuthDeps): Promise<AuthStatus> {
     await deps.secrets.remove(accountFor(host));
   }
   deps.clearHost();
-  return { connected: false, host: null, error: null };
+  return { connected: false, host: host ?? null, error: null };
 }

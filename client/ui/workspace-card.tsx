@@ -1,4 +1,5 @@
-import { useRpc, useWorkspace } from "@getpaseo/plugin/client";
+import { useWorkspace } from "@getpaseo/plugin/client";
+import { useRpc } from "../account";
 import { useQuery } from "@tanstack/react-query";
 import React from "react";
 import { Pressable, Text, View } from "react-native";

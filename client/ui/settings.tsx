@@ -1,5 +1,5 @@
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useRpc } from "@getpaseo/plugin/client";
+import { ACCOUNTS_KEY, refreshAccountCaches, useRpc } from "../account";
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import {
   ExternalLink,
@@ -12,7 +12,13 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { authConnectRpc, authDisconnectRpc, authStatusRpc, type AuthStatus } from "../../shared/contract";
+import {
+  accountsRpc,
+  authConnectRpc,
+  authDisconnectRpc,
+  authStatusRpc,
+  type AuthStatus,
+} from "../../shared/contract";
 import { STATUS_KEY } from "./queries";
 import { useStyles, type Styles } from "./styles";
 
@@ -116,54 +122,109 @@ function ConnectForm({
   );
 }
 
+/** One connected GitLab: its account, its token, and Disconnect for it alone. */
+function AccountCard({ host, styles, onChanged }: { host: string; styles: Styles; onChanged: () => void }) {
+  const readStatus = useRpc(authStatusRpc);
+  const disconnectRpc = useRpc(authDisconnectRpc);
+  const status = useQuery({ queryKey: [...STATUS_KEY, host], queryFn: () => readStatus({ account: host }) });
+  const disconnect = useMutation({
+    mutationFn: () => disconnectRpc({ account: host }),
+    onSuccess: onChanged,
+  });
+  if (status.isPending) {
+    return <Text style={styles.muted}>Checking {new URL(host).host}…</Text>;
+  }
+  const problem = status.isError
+    ? errorText(status.error)
+    : status.data.connected
+      ? null
+      : (status.data.error ?? "The token is missing.");
+  if (problem !== null || !status.data?.connected) {
+    return (
+      <SettingsCard>
+        <SettingsRow label="GitLab" error={problem}>
+          <Text style={styles.text}>{host}</Text>
+        </SettingsRow>
+        <SettingsAction
+          label="Disconnect"
+          hint="Removes this GitLab and its token."
+          actionLabel="Disconnect"
+          onPress={() => disconnect.mutate()}
+          disabled={disconnect.isPending}
+        />
+      </SettingsCard>
+    );
+  }
+  return (
+    <Connected
+      status={status.data}
+      onDisconnect={() => disconnect.mutate()}
+      busy={disconnect.isPending}
+      styles={styles}
+    />
+  );
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : "Could not reach GitLab.";
+}
+
 export function GitLabSettings({ theme }: PluginSurfaceProps) {
   const styles = useStyles(theme);
   const toast = useToast();
   const queryClient = useQueryClient();
-  const readStatus = useRpc(authStatusRpc);
+  const readAccounts = useRpc(accountsRpc);
   const connectRpc = useRpc(authConnectRpc);
-  const disconnectRpc = useRpc(authDisconnectRpc);
+  const accounts = useQuery({ queryKey: [...ACCOUNTS_KEY, ""], queryFn: () => readAccounts({}) });
+  const [adding, setAdding] = useState(false);
 
-  const status = useQuery({ queryKey: STATUS_KEY, queryFn: () => readStatus({}) });
-
-  const onSaved = (next: AuthStatus) => {
-    queryClient.setQueryData(STATUS_KEY, next);
+  const onChanged = () => {
+    void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
     void queryClient.invalidateQueries({ queryKey: ["gitlab"] });
+    refreshAccountCaches();
   };
   const connect = useMutation({
     mutationFn: connectRpc,
-    onSuccess: (next) => {
-      onSaved(next);
+    onSuccess: () => {
+      onChanged();
+      setAdding(false);
       toast.show("Connected to GitLab", { variant: "success" });
     },
   });
-  const disconnect = useMutation({ mutationFn: () => disconnectRpc({}), onSuccess: onSaved });
+  const hosts = accounts.data?.hosts ?? [];
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.scroll}>
       <SettingsSection title="GitLab">
-        {status.isPending ? (
+        {accounts.isPending ? (
           <Text style={styles.muted}>Checking the connection…</Text>
-        ) : status.isError ? (
+        ) : accounts.isError ? (
           <View style={styles.cardBody}>
-            <Text style={styles.error}>
-              {status.error instanceof Error ? status.error.message : "Could not reach GitLab."}
-            </Text>
+            <Text style={styles.error}>{errorText(accounts.error)}</Text>
           </View>
-        ) : status.data.connected ? (
-          <Connected
-            status={status.data}
-            onDisconnect={() => disconnect.mutate()}
-            busy={disconnect.isPending}
-            styles={styles}
-          />
         ) : (
-          <ConnectForm
-            status={status.data}
-            onConnect={(input) => connect.mutate(input)}
-            busy={connect.isPending}
-            error={connect.error instanceof Error ? connect.error.message : null}
-          />
+          <View style={{ gap: 12 }}>
+            {hosts.map((host) => (
+              <AccountCard key={host} host={host} styles={styles} onChanged={onChanged} />
+            ))}
+            {hosts.length === 0 || adding ? (
+              <ConnectForm
+                status={undefined}
+                onConnect={(input) => connect.mutate(input)}
+                busy={connect.isPending}
+                error={connect.error instanceof Error ? connect.error.message : null}
+              />
+            ) : (
+              <SettingsCard>
+                <SettingsAction
+                  label="Another GitLab"
+                  hint="Each workspace uses the GitLab its origin points at; the panel lets you pick another."
+                  actionLabel="Add"
+                  onPress={() => setAdding(true)}
+                />
+              </SettingsCard>
+            )}
+          </View>
         )}
       </SettingsSection>
     </ScrollView>

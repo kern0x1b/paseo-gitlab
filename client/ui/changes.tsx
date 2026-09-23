@@ -1,4 +1,5 @@
-import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
+import { openExternalUrl } from "@getpaseo/plugin/client";
+import { useRpc } from "../account";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useEffect, useMemo, useState } from "react";
 import { Icon, useToast } from "@getpaseo/plugin/client/react-native";

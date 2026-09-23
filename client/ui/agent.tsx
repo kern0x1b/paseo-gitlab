@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { usePaseo } from "@getpaseo/plugin/client";
+import { useRpc } from "../account";
 import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery } from "@tanstack/react-query";
 import React, { useState } from "react";

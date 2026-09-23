@@ -123,7 +123,9 @@ function projectPath(path: string): string {
 
 /** Folders before files, each alphabetically, as GitLab lists a folder. */
 function sortEntries(entries: TreeEntry[]): TreeEntry[] {
-  return entries.sort((a, b) => (a.type !== b.type ? (a.type === "tree" ? -1 : 1) : a.name.localeCompare(b.name)));
+  return entries.sort((a, b) =>
+    a.type !== b.type ? (a.type === "tree" ? -1 : 1) : a.name.localeCompare(b.name),
+  );
 }
 /** "Show the full log": still bounded, so a runaway job cannot freeze the panel. */
 const FULL_LOG_LINES = 50_000;
@@ -815,7 +817,11 @@ export function createHandlers(deps: AuthDeps) {
 
     async commits(input: { projectPath: string; iid: string }): Promise<{ commits: Commit[] }> {
       const connection = await requireConnection(deps);
-      const raw = await rest<RawCommit[]>(connection, `${mergeRequestPath(input)}/commits?per_page=100`, deps.fetch);
+      const raw = await rest<RawCommit[]>(
+        connection,
+        `${mergeRequestPath(input)}/commits?per_page=100`,
+        deps.fetch,
+      );
       return { commits: raw.map(toCommit) };
     },
 
@@ -877,7 +883,11 @@ export function createHandlers(deps: AuthDeps) {
             web_url: string;
             commit: RawCommit;
           }[]
-        >(connection, `${projectPath(input.projectPath)}/repository/branches?per_page=100${search}`, deps.fetch),
+        >(
+          connection,
+          `${projectPath(input.projectPath)}/repository/branches?per_page=100${search}`,
+          deps.fetch,
+        ),
         rest<{ default_branch?: string | null }>(connection, projectPath(input.projectPath), deps.fetch),
       ]);
       const branches = raw
@@ -892,7 +902,11 @@ export function createHandlers(deps: AuthDeps) {
         }))
         // The default branch first, then the most recently committed to.
         .sort((a, b) =>
-          a.isDefault !== b.isDefault ? (a.isDefault ? -1 : 1) : b.commit.createdAt.localeCompare(a.commit.createdAt),
+          a.isDefault !== b.isDefault
+            ? a.isDefault
+              ? -1
+              : 1
+            : b.commit.createdAt.localeCompare(a.commit.createdAt),
         );
       return { branches, defaultBranch: project.default_branch ?? null };
     },
@@ -911,7 +925,10 @@ export function createHandlers(deps: AuthDeps) {
         );
         return result.commits.length;
       };
-      const [ahead, behind] = await Promise.all([count(input.base, input.branch), count(input.branch, input.base)]);
+      const [ahead, behind] = await Promise.all([
+        count(input.base, input.branch),
+        count(input.branch, input.base),
+      ]);
       return { ahead, behind };
     },
 
@@ -945,7 +962,14 @@ export function createHandlers(deps: AuthDeps) {
         case "mr":
           return fetchDiffs(connection, scope.projectPath, scope.iid, deps.fetch);
         case "compare":
-          return fetchCompare(connection, scope.projectPath, scope.from, scope.to, deps.fetch, scope.mergeBase);
+          return fetchCompare(
+            connection,
+            scope.projectPath,
+            scope.from,
+            scope.to,
+            deps.fetch,
+            scope.mergeBase,
+          );
         case "commit":
           return fetchCommitDiffs(connection, scope.projectPath, scope.sha, deps.fetch);
       }
