@@ -63,12 +63,24 @@ export const ListsSchema = z.object({
   reviewMergeRequests: z.array(ListItemSchema),
 });
 
+/** Where a code comment sits: the file and the line on either side of the diff. */
+export const NotePositionSchema = z.object({
+  path: z.string(),
+  newLine: z.number().nullable(),
+  oldLine: z.number().nullable(),
+});
+
 export const NoteSchema = z.object({
   id: z.string(),
   author: PersonSchema.nullable(),
   createdAt: z.string(),
+  /** Markdown source, for editing. */
+  body: z.string(),
   bodyHtml: z.string(),
   system: z.boolean(),
+  /** GitLab's `adminNote`: your own notes, or any note if you administer the project. */
+  canEdit: z.boolean(),
+  position: NotePositionSchema.nullable(),
 });
 
 export const DiscussionSchema = z.object({
@@ -78,9 +90,19 @@ export const DiscussionSchema = z.object({
   notes: z.array(NoteSchema),
 });
 
+export const DetailLabelSchema = LabelSchema.extend({ id: z.string() });
+
+export const DiffRefsSchema = z.object({ baseSha: z.string(), headSha: z.string(), startSha: z.string() });
+
 export const DetailSchema = ItemRefSchema.extend({
   /** Global id; `createNote` addresses the issue or MR by it. */
   id: z.string(),
+  canEdit: z.boolean(),
+  canComment: z.boolean(),
+  /** Markdown source, for editing. */
+  description: z.string(),
+  /** MRs only: the commits a code comment is anchored to. */
+  diffRefs: DiffRefsSchema.nullable(),
   reference: z.string(),
   title: z.string(),
   state: z.string(),
@@ -88,7 +110,7 @@ export const DetailSchema = ItemRefSchema.extend({
   createdAt: z.string(),
   author: PersonSchema.nullable(),
   descriptionHtml: z.string(),
-  labels: z.array(LabelSchema),
+  labels: z.array(DetailLabelSchema),
   assignees: z.array(PersonSchema),
   reviewers: z.array(PersonSchema),
   milestone: z.string().nullable(),
@@ -182,6 +204,9 @@ export type ItemRef = z.output<typeof ItemRefSchema>;
 export type ListItem = z.output<typeof ListItemSchema>;
 export type Lists = z.output<typeof ListsSchema>;
 export type Note = z.output<typeof NoteSchema>;
+export type NotePosition = z.output<typeof NotePositionSchema>;
+export type DetailLabel = z.output<typeof DetailLabelSchema>;
+export type DiffRefs = z.output<typeof DiffRefsSchema>;
 export type Discussion = z.output<typeof DiscussionSchema>;
 export type Detail = z.output<typeof DetailSchema>;
 export type AuthStatus = z.output<typeof AuthStatusSchema>;
@@ -229,8 +254,105 @@ export const addNoteRpc = defineRpc({
   input: z.object({
     noteableId: z.string(),
     body: z.string().min(1),
-    /** Set to reply inside a thread; left out, the note starts a new one. */
+    /** Set to reply inside a thread. */
     discussionId: z.string().optional(),
+    /** Without `discussionId`: a plain comment, or a new resolvable thread. */
+    mode: z.enum(["comment", "thread"]).default("comment"),
+  }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const updateNoteRpc = defineRpc({
+  name: "gitlab.note.update",
+  input: z.object({ id: z.string(), body: z.string().min(1) }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const deleteNoteRpc = defineRpc({
+  name: "gitlab.note.delete",
+  input: z.object({ id: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const updateItemRpc = defineRpc({
+  name: "gitlab.item.update",
+  input: ItemRefSchema.extend({
+    title: z.string().min(1).optional(),
+    description: z.string().optional(),
+    state: z.enum(["close", "reopen"]).optional(),
+    /** MRs only. */
+    draft: z.boolean().optional(),
+  }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const setPeopleRpc = defineRpc({
+  name: "gitlab.item.people",
+  input: ItemRefSchema.extend({
+    field: z.enum(["assignees", "reviewers"]),
+    usernames: z.array(z.string()),
+  }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const setLabelsRpc = defineRpc({
+  name: "gitlab.item.labels",
+  input: ItemRefSchema.extend({ labelIds: z.array(z.string()) }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const searchUsersRpc = defineRpc({
+  name: "gitlab.users.search",
+  input: z.object({ projectPath: z.string(), search: z.string() }),
+  output: z.object({ users: z.array(PersonSchema) }),
+});
+
+export const searchLabelsRpc = defineRpc({
+  name: "gitlab.labels.search",
+  input: z.object({ projectPath: z.string(), search: z.string() }),
+  output: z.object({ labels: z.array(DetailLabelSchema) }),
+});
+
+export const DiffLineSchema = z.object({
+  kind: z.enum(["hunk", "context", "added", "removed"]),
+  oldLine: z.number().nullable(),
+  newLine: z.number().nullable(),
+  text: z.string(),
+});
+
+export const DiffFileSchema = z.object({
+  oldPath: z.string(),
+  newPath: z.string(),
+  newFile: z.boolean(),
+  deletedFile: z.boolean(),
+  renamedFile: z.boolean(),
+  additions: z.number(),
+  deletions: z.number(),
+  /** Too large or collapsed by GitLab: no lines, only a link. */
+  truncated: z.boolean(),
+  lines: z.array(DiffLineSchema),
+});
+
+export type DiffLine = z.output<typeof DiffLineSchema>;
+export type DiffFile = z.output<typeof DiffFileSchema>;
+
+export const diffsRpc = defineRpc({
+  name: "gitlab.mr.diffs",
+  input: z.object({ projectPath: z.string(), iid: z.string() }),
+  output: z.object({ files: z.array(DiffFileSchema), truncated: z.boolean() }),
+});
+
+export const addDiffNoteRpc = defineRpc({
+  name: "gitlab.note.diff",
+  input: z.object({
+    noteableId: z.string(),
+    body: z.string().min(1),
+    diffRefs: DiffRefsSchema,
+    oldPath: z.string(),
+    newPath: z.string(),
+    /** An added line has only `newLine`, a removed one only `oldLine`, context both. */
+    oldLine: z.number().nullable(),
+    newLine: z.number().nullable(),
   }),
   output: z.object({ ok: z.literal(true) }),
 });

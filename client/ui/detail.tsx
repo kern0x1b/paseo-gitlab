@@ -1,13 +1,18 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { TextInput, useToast } from "@getpaseo/plugin/client/react-native";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
   addNoteRpc,
+  deleteNoteRpc,
   detailRpc,
   resolveRpc,
+  setLabelsRpc,
+  setPeopleRpc,
+  updateItemRpc,
+  updateNoteRpc,
   type Detail,
   type Discussion,
   type ItemRef,
@@ -19,57 +24,85 @@ import { HtmlBody } from "../html/html-body";
 import { htmlToText } from "../html/sanitize";
 import { Avatar, Badge, Button, Centered, errorText, IconButton, Labels, PipelineDot } from "./common";
 import { humanize, mergeStatusLabel, timeAgo } from "./format";
+import { LabelPicker, PeoplePicker } from "./picker";
 import { DETAIL_REFRESH_MS, detailKey, LISTS_KEY } from "./queries";
 import type { Styles } from "./styles";
 
-type Ui = { theme: PluginTheme; styles: Styles; host: string };
+export type Ui = { theme: PluginTheme; styles: Styles; host: string };
+
+/** What a thread needs to act on its notes; built once per detail. */
+export interface NoteActions {
+  reply: (discussionId: string, body: string) => Promise<unknown>;
+  resolve: (discussionId: string, resolve: boolean) => Promise<unknown>;
+  edit: (noteId: string, body: string) => Promise<unknown>;
+  remove: (noteId: string) => Promise<unknown>;
+}
 
 function people(list: Person[]): string {
   return list.map((person) => `@${person.username}`).join(", ");
 }
 
-function Meta({ label, value, styles }: { label: string; value: string | null; styles: Styles }) {
-  if (!value) {
-    return null;
-  }
+function Link({
+  label,
+  onPress,
+  ui,
+  danger,
+}: {
+  label: string;
+  onPress: () => void;
+  ui: Ui;
+  danger?: boolean;
+}) {
   return (
-    <View style={styles.metaRow}>
-      <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
-    </View>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={6}>
+      <Text
+        style={[ui.styles.small, { color: danger ? ui.theme.colors.statusDanger : ui.theme.colors.accent }]}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
 /**
- * One composer for both a new thread and a reply. Cmd/Ctrl+Enter sends on web,
- * the button everywhere.
+ * One composer for new comments, replies and edits. Cmd/Ctrl+Enter sends the
+ * primary action on web; a secondary action ("Start thread") sits next to it.
  */
-function Composer({
+export function Composer({
   placeholder,
   sendLabel,
   onSend,
+  secondary,
   onCancel,
+  initialValue = "",
+  autoFocus,
   ui,
 }: {
   placeholder: string;
   sendLabel: string;
   onSend: (body: string) => Promise<unknown>;
+  secondary?: { label: string; onSend: (body: string) => Promise<unknown> };
   onCancel?: () => void;
+  initialValue?: string;
+  autoFocus?: boolean;
   ui: Ui;
 }) {
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const send = async () => {
+  const [body, setBody] = useState(initialValue);
+  const [sending, setSending] = useState<"primary" | "secondary" | null>(null);
+  const send = async (which: "primary" | "secondary") => {
     const text = body.trim();
-    if (!text || sending) {
+    const action = which === "primary" ? onSend : secondary?.onSend;
+    if (!text || sending || !action) {
       return;
     }
-    setSending(true);
+    setSending(which);
     try {
-      await onSend(text);
+      await action(text);
       setBody("");
+    } catch {
+      // The mutation already raised a toast; keep the text so nothing typed is lost.
     } finally {
-      setSending(false);
+      setSending(null);
     }
   };
   return (
@@ -80,24 +113,35 @@ function Composer({
         placeholder={placeholder}
         placeholderTextColor={ui.theme.colors.foregroundMuted}
         multiline
-        editable={!sending}
+        autoFocus={autoFocus}
+        editable={sending === null}
         style={ui.styles.input}
         onKeyPress={(event) => {
           const native = event.nativeEvent as { key: string; metaKey?: boolean; ctrlKey?: boolean };
           if (native.key === "Enter" && (native.metaKey || native.ctrlKey)) {
-            void send();
+            void send("primary");
           }
         }}
       />
       <View style={ui.styles.row}>
         <View style={ui.styles.spacer} />
         {onCancel ? <Button label="Cancel" onPress={onCancel} styles={ui.styles} theme={ui.theme} /> : null}
+        {secondary ? (
+          <Button
+            label={secondary.label}
+            busy={sending === "secondary"}
+            disabled={!body.trim() || sending === "primary"}
+            onPress={() => void send("secondary")}
+            styles={ui.styles}
+            theme={ui.theme}
+          />
+        ) : null}
         <Button
           label={sendLabel}
           primary
-          busy={sending}
-          disabled={!body.trim()}
-          onPress={() => void send()}
+          busy={sending === "primary"}
+          disabled={!body.trim() || sending === "secondary"}
+          onPress={() => void send("primary")}
           styles={ui.styles}
           theme={ui.theme}
         />
@@ -106,7 +150,10 @@ function Composer({
   );
 }
 
-function NoteView({ note, ui }: { note: Note; ui: Ui }) {
+export function NoteView({ note, actions, ui }: { note: Note; actions: NoteActions; ui: Ui }) {
+  const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   return (
     <View style={ui.styles.note}>
       <View style={ui.styles.noteHeader}>
@@ -114,24 +161,76 @@ function NoteView({ note, ui }: { note: Note; ui: Ui }) {
         <Text style={ui.styles.noteAuthor} numberOfLines={1}>
           {note.author?.name ?? "Ghost user"}
         </Text>
-        <Text style={ui.styles.small} numberOfLines={1}>
+        <Text style={[ui.styles.small, { flexShrink: 1 }]} numberOfLines={1}>
           @{note.author?.username ?? "ghost"} · {timeAgo(note.createdAt)}
         </Text>
+        <View style={ui.styles.spacer} />
+        {note.canEdit && !editing && !confirmingDelete ? (
+          <>
+            <Link label="Edit" onPress={() => setEditing(true)} ui={ui} />
+            <Link label="Delete" onPress={() => setConfirmingDelete(true)} ui={ui} danger />
+          </>
+        ) : null}
+        {confirmingDelete ? (
+          <>
+            <Text style={ui.styles.small}>Delete this comment?</Text>
+            <Link label="No" onPress={() => setConfirmingDelete(false)} ui={ui} />
+            <Link
+              label={deleting ? "Deleting…" : "Yes, delete"}
+              danger
+              onPress={() => {
+                setDeleting(true);
+                void actions
+                  .remove(note.id)
+                  .catch(() => {})
+                  .finally(() => {
+                    setDeleting(false);
+                    setConfirmingDelete(false);
+                  });
+              }}
+              ui={ui}
+            />
+          </>
+        ) : null}
       </View>
-      <HtmlBody html={note.bodyHtml} host={ui.host} theme={ui.theme} />
+      {editing ? (
+        <Composer
+          placeholder="Edit the comment…"
+          sendLabel="Save"
+          initialValue={note.body}
+          autoFocus
+          onSend={async (body) => {
+            await actions.edit(note.id, body);
+            setEditing(false);
+          }}
+          onCancel={() => setEditing(false)}
+          ui={ui}
+        />
+      ) : (
+        <HtmlBody html={note.bodyHtml} host={ui.host} theme={ui.theme} />
+      )}
     </View>
   );
 }
 
-function Thread({
+function positionLabel(discussion: Discussion): { path: string; label: string } | null {
+  const position = discussion.notes[0]?.position;
+  if (!position) {
+    return null;
+  }
+  const line = position.newLine ?? position.oldLine;
+  return { path: position.path, label: `${position.path}${line != null ? `:${line}` : ""}` };
+}
+
+export function Thread({
   discussion,
-  onReply,
-  onResolve,
+  actions,
+  onOpenCode,
   ui,
 }: {
   discussion: Discussion;
-  onReply: (discussionId: string, body: string) => Promise<unknown>;
-  onResolve: (discussionId: string, resolve: boolean) => Promise<unknown>;
+  actions: NoteActions;
+  onOpenCode?: (path: string) => void;
   ui: Ui;
 }) {
   const [replying, setReplying] = useState(false);
@@ -142,41 +241,62 @@ function Thread({
   if (!first) {
     return null;
   }
+  const code = positionLabel(discussion);
   return (
     <View style={ui.styles.card}>
       <View style={ui.styles.cardBody}>
-        {discussion.resolvable ? (
+        {code || discussion.resolvable ? (
           <View style={ui.styles.row}>
-            {discussion.resolved ? (
-              <Badge label="Resolved" styles={ui.styles} color={ui.theme.colors.statusSuccess} />
-            ) : (
-              <Badge label="Unresolved" styles={ui.styles} color={ui.theme.colors.statusWarning} />
-            )}
+            {code ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${code.label} in the changes`}
+                onPress={() => onOpenCode?.(code.path)}
+                disabled={!onOpenCode}
+                style={{ flexShrink: 1 }}
+              >
+                <Text style={[ui.styles.small, { color: ui.theme.colors.accent }]} numberOfLines={1}>
+                  📄 {code.label}
+                </Text>
+              </Pressable>
+            ) : null}
             <View style={ui.styles.spacer} />
-            <Button
-              label={discussion.resolved ? "Unresolve" : "Resolve thread"}
-              busy={resolving}
-              onPress={() => {
-                setResolving(true);
-                void onResolve(discussion.id, !discussion.resolved).finally(() => setResolving(false));
-              }}
-              styles={ui.styles}
-              theme={ui.theme}
-            />
+            {discussion.resolvable ? (
+              <>
+                {discussion.resolved ? (
+                  <Badge label="Resolved" styles={ui.styles} color={ui.theme.colors.statusSuccess} />
+                ) : (
+                  <Badge label="Unresolved" styles={ui.styles} color={ui.theme.colors.statusWarning} />
+                )}
+                <Button
+                  label={discussion.resolved ? "Unresolve" : "Resolve"}
+                  busy={resolving}
+                  onPress={() => {
+                    setResolving(true);
+                    void actions
+                      .resolve(discussion.id, !discussion.resolved)
+                      .catch(() => {})
+                      .finally(() => setResolving(false));
+                  }}
+                  styles={ui.styles}
+                  theme={ui.theme}
+                />
+              </>
+            ) : null}
           </View>
         ) : null}
-        <NoteView note={first} ui={ui} />
+        <NoteView note={first} actions={actions} ui={ui} />
         {replies.length > 0 && !expanded ? (
-          <Pressable accessibilityRole="button" onPress={() => setExpanded(true)}>
-            <Text style={[ui.styles.muted, { color: ui.theme.colors.accent }]}>
-              Show {replies.length} {replies.length === 1 ? "reply" : "replies"}
-            </Text>
-          </Pressable>
+          <Link
+            label={`Show ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
+            onPress={() => setExpanded(true)}
+            ui={ui}
+          />
         ) : null}
         {replies.length > 0 && expanded ? (
           <View style={ui.styles.replies}>
             {replies.map((note) => (
-              <NoteView key={note.id} note={note} ui={ui} />
+              <NoteView key={note.id} note={note} actions={actions} ui={ui} />
             ))}
           </View>
         ) : null}
@@ -184,8 +304,9 @@ function Thread({
           <Composer
             placeholder="Reply…"
             sendLabel="Reply"
+            autoFocus
             onSend={async (body) => {
-              await onReply(discussion.id, body);
+              await actions.reply(discussion.id, body);
               setReplying(false);
               setExpanded(true);
             }}
@@ -193,10 +314,108 @@ function Thread({
             ui={ui}
           />
         ) : (
-          <Pressable accessibilityRole="button" onPress={() => setReplying(true)}>
-            <Text style={[ui.styles.muted, { color: ui.theme.colors.accent }]}>Reply</Text>
-          </Pressable>
+          <Link label="Reply" onPress={() => setReplying(true)} ui={ui} />
         )}
+      </View>
+    </View>
+  );
+}
+
+function EditableRow({
+  label,
+  value,
+  onEdit,
+  ui,
+  children,
+}: {
+  label: string;
+  value?: string | null;
+  onEdit?: () => void;
+  ui: Ui;
+  children?: React.ReactNode;
+}) {
+  if (!value && !children && !onEdit) {
+    return null;
+  }
+  return (
+    <View style={[ui.styles.metaRow, { alignItems: "center" }]}>
+      <Text style={ui.styles.metaLabel}>{label}</Text>
+      <View style={{ flex: 1 }}>
+        {children ?? <Text style={ui.styles.metaValue}>{value || "None"}</Text>}
+      </View>
+      {onEdit ? (
+        <IconButton
+          icon="Pencil"
+          label={`Edit ${label.toLowerCase()}`}
+          onPress={onEdit}
+          theme={ui.theme}
+          styles={ui.styles}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function EditForm({
+  detail,
+  onSave,
+  onCancel,
+  ui,
+}: {
+  detail: Detail;
+  onSave: (changes: { title: string; description: string }) => Promise<unknown>;
+  onCancel: () => void;
+  ui: Ui;
+}) {
+  const [title, setTitle] = useState(detail.title);
+  const [description, setDescription] = useState(detail.description);
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave({ title: title.trim(), description });
+    } catch {
+      // Reported by the mutation's toast; the form stays open with the edits.
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <View style={ui.styles.card}>
+      <View style={ui.styles.cardBody}>
+        <Text style={ui.styles.sectionTitle}>Title</Text>
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          editable={!saving}
+          style={[ui.styles.input, { minHeight: 0 }]}
+          placeholderTextColor={ui.theme.colors.foregroundMuted}
+        />
+        <Text style={ui.styles.sectionTitle}>Description (Markdown)</Text>
+        <TextInput
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          editable={!saving}
+          style={[
+            ui.styles.input,
+            { minHeight: 220, maxHeight: 520, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 },
+          ]}
+          placeholderTextColor={ui.theme.colors.foregroundMuted}
+        />
+        <View style={ui.styles.row}>
+          <View style={ui.styles.spacer} />
+          <Button label="Cancel" onPress={onCancel} styles={ui.styles} theme={ui.theme} />
+          <Button
+            label="Save"
+            primary
+            busy={saving}
+            disabled={!title.trim()}
+            onPress={() => void save()}
+            styles={ui.styles}
+            theme={ui.theme}
+          />
+        </View>
       </View>
     </View>
   );
@@ -206,12 +425,14 @@ function Header({
   detail,
   onBack,
   onRefresh,
+  onEdit,
   refreshing,
   ui,
 }: {
   detail: Detail;
   onBack: () => void;
   onRefresh: () => void;
+  onEdit?: () => void;
   refreshing: boolean;
   ui: Ui;
 }) {
@@ -224,17 +445,20 @@ function Header({
   return (
     <View style={{ gap: 8 }}>
       <View style={ui.styles.row}>
-        <IconButton
-          icon="ChevronLeft"
-          label="Back to the list"
-          onPress={onBack}
-          theme={ui.theme}
-          styles={ui.styles}
-        />
+        <IconButton icon="ChevronLeft" label="Back" onPress={onBack} theme={ui.theme} styles={ui.styles} />
         <Text style={ui.styles.muted} numberOfLines={1}>
           {detail.reference}
         </Text>
         <View style={ui.styles.spacer} />
+        {onEdit ? (
+          <IconButton
+            icon="Pencil"
+            label="Edit title and description"
+            onPress={onEdit}
+            theme={ui.theme}
+            styles={ui.styles}
+          />
+        ) : null}
         <IconButton
           icon="RefreshCw"
           label="Refresh"
@@ -252,7 +476,7 @@ function Header({
         />
       </View>
       <Text style={ui.styles.title}>{detail.title}</Text>
-      <View style={ui.styles.row}>
+      <View style={[ui.styles.row, { flexWrap: "wrap" }]}>
         <Badge label={humanize(detail.state)} styles={ui.styles} color={stateColor} />
         {detail.draft ? <Badge label="Draft" styles={ui.styles} /> : null}
         {detail.kind === "mr" && detail.approved ? (
@@ -266,44 +490,71 @@ function Header({
   );
 }
 
+/**
+ * Every write here follows the same path: run it, refresh the item and the lists,
+ * and on failure show a toast and rethrow so the caller keeps its form open.
+ */
+export function useWrite(itemRef: ItemRef): (work: () => Promise<unknown>) => Promise<void> {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  return async (work) => {
+    try {
+      await work();
+      await queryClient.invalidateQueries({ queryKey: detailKey(itemRef) });
+      void queryClient.invalidateQueries({ queryKey: LISTS_KEY });
+    } catch (error) {
+      toast.error(errorText(error));
+      throw error;
+    }
+  };
+}
+
+/** Note mutations, shared by the detail and the changes view. */
+export function useNoteActions(itemRef: ItemRef, noteableId: string | undefined): NoteActions {
+  const addNote = useRpc(addNoteRpc);
+  const updateNote = useRpc(updateNoteRpc);
+  const deleteNote = useRpc(deleteNoteRpc);
+  const resolve = useRpc(resolveRpc);
+  const write = useWrite(itemRef);
+  return {
+    reply: (discussionId, body) =>
+      write(() => addNote({ noteableId: noteableId ?? "", body, discussionId, mode: "comment" })),
+    resolve: (discussionId, value) => write(() => resolve({ discussionId, resolve: value })),
+    edit: (id, body) => write(() => updateNote({ id, body })),
+    remove: (id) => write(() => deleteNote({ id })),
+  };
+}
+
 export function ItemDetail({
   itemRef,
   onBack,
   onOpenPipeline,
+  onOpenChanges,
   ui,
 }: {
   itemRef: ItemRef;
   onBack: () => void;
   onOpenPipeline: (ref: PipelineRef) => void;
+  onOpenChanges: (focusPath?: string) => void;
   ui: Ui;
 }) {
   const readDetail = useRpc(detailRpc);
   const addNote = useRpc(addNoteRpc);
-  const resolve = useRpc(resolveRpc);
-  const queryClient = useQueryClient();
-  const toast = useToast();
+  const updateItem = useRpc(updateItemRpc);
+  const setPeople = useRpc(setPeopleRpc);
+  const setLabels = useRpc(setLabelsRpc);
+  const write = useWrite(itemRef);
   const [showSystem, setShowSystem] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [picker, setPicker] = useState<"assignees" | "reviewers" | "labels" | null>(null);
+  const [changingState, setChangingState] = useState<"draft" | "state" | null>(null);
 
   const query = useQuery({
     queryKey: detailKey(itemRef),
     queryFn: () => readDetail(itemRef),
     refetchInterval: DETAIL_REFRESH_MS,
   });
-
-  const afterWrite = async () => {
-    await queryClient.invalidateQueries({ queryKey: detailKey(itemRef) });
-    void queryClient.invalidateQueries({ queryKey: LISTS_KEY });
-  };
-  const post = useMutation({
-    mutationFn: addNote,
-    onSuccess: afterWrite,
-    onError: (error) => toast.error(errorText(error)),
-  });
-  const toggle = useMutation({
-    mutationFn: resolve,
-    onSuccess: afterWrite,
-    onError: (error) => toast.error(errorText(error)),
-  });
+  const actions = useNoteActions(itemRef, query.data?.id);
 
   if (query.isPending) {
     return (
@@ -325,10 +576,23 @@ export function ItemDetail({
   }
 
   const detail = query.data;
+  const isMr = detail.kind === "mr";
+  const edit = detail.canEdit;
   const systemCount = detail.discussions.filter((discussion) => discussion.notes[0]?.system).length;
   const visible = detail.discussions.filter((discussion) => showSystem || !discussion.notes[0]?.system);
   const branches =
     detail.sourceBranch && detail.targetBranch ? `${detail.sourceBranch} → ${detail.targetBranch}` : null;
+  const stateAction = detail.state === "opened" ? "close" : detail.state === "closed" ? "reopen" : null;
+
+  const changeState = (
+    which: "draft" | "state",
+    changes: { state?: "close" | "reopen"; draft?: boolean },
+  ) => {
+    setChangingState(which);
+    void write(() => updateItem({ ...itemRef, ...changes }))
+      .catch(() => {})
+      .finally(() => setChangingState(null));
+  };
 
   return (
     <View style={{ gap: 12 }}>
@@ -336,21 +600,52 @@ export function ItemDetail({
         detail={detail}
         onBack={onBack}
         onRefresh={() => void query.refetch()}
+        onEdit={edit && !editing ? () => setEditing(true) : undefined}
         refreshing={query.isFetching}
         ui={ui}
       />
 
+      {editing ? (
+        <EditForm
+          detail={detail}
+          onSave={async (changes) => {
+            await write(() =>
+              updateItem({ ...itemRef, title: changes.title, description: changes.description }),
+            );
+            setEditing(false);
+          }}
+          onCancel={() => setEditing(false)}
+          ui={ui}
+        />
+      ) : null}
+
       <View style={ui.styles.card}>
         <View style={ui.styles.cardBody}>
-          <Meta label="Assignees" value={people(detail.assignees)} styles={ui.styles} />
-          <Meta label="Reviewers" value={people(detail.reviewers)} styles={ui.styles} />
-          <Meta label="Milestone" value={detail.milestone} styles={ui.styles} />
-          <Meta label="Branches" value={branches} styles={ui.styles} />
-          {detail.kind === "mr" ? (
-            <View style={ui.styles.metaRow}>
-              <Text style={ui.styles.metaLabel}>Status</Text>
-              <Text style={ui.styles.metaValue}>{mergeStatusLabel(detail.mergeStatus) ?? "—"}</Text>
-            </View>
+          <EditableRow
+            label="Assignees"
+            value={people(detail.assignees)}
+            onEdit={edit ? () => setPicker("assignees") : undefined}
+            ui={ui}
+          />
+          {isMr ? (
+            <EditableRow
+              label="Reviewers"
+              value={people(detail.reviewers)}
+              onEdit={edit ? () => setPicker("reviewers") : undefined}
+              ui={ui}
+            />
+          ) : null}
+          <EditableRow label="Labels" onEdit={edit ? () => setPicker("labels") : undefined} ui={ui}>
+            {detail.labels.length > 0 ? (
+              <Labels labels={detail.labels} styles={ui.styles} />
+            ) : (
+              <Text style={ui.styles.metaValue}>None</Text>
+            )}
+          </EditableRow>
+          <EditableRow label="Milestone" value={detail.milestone} ui={ui} />
+          <EditableRow label="Branches" value={branches} ui={ui} />
+          {isMr ? (
+            <EditableRow label="Status" value={mergeStatusLabel(detail.mergeStatus) ?? "—"} ui={ui} />
           ) : null}
           {detail.pipelineIid ? (
             <Pressable
@@ -363,64 +658,129 @@ export function ItemDetail({
               <View style={[ui.styles.row, { flex: 1 }]}>
                 <PipelineDot status={detail.pipelineStatus} theme={ui.theme} styles={ui.styles} />
                 <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
-                  #{detail.pipelineIid} {detail.pipelineStatus ? humanize(detail.pipelineStatus).toLowerCase() : ""} ›
+                  #{detail.pipelineIid}{" "}
+                  {detail.pipelineStatus ? humanize(detail.pipelineStatus).toLowerCase() : ""} ›
                 </Text>
               </View>
             </Pressable>
           ) : null}
-          <Labels labels={detail.labels} styles={ui.styles} />
+          {isMr ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open the changes"
+              onPress={() => onOpenChanges()}
+              style={({ pressed }) => [ui.styles.metaRow, pressed ? ui.styles.listRowPressed : null]}
+            >
+              <Text style={ui.styles.metaLabel}>Changes</Text>
+              <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
+                Files and code comments ›
+              </Text>
+            </Pressable>
+          ) : null}
+          {edit && (stateAction || isMr) ? (
+            <View style={[ui.styles.row, { flexWrap: "wrap", marginTop: 4 }]}>
+              {isMr && detail.state === "opened" ? (
+                <Button
+                  label={detail.draft ? "Mark as ready" : "Mark as draft"}
+                  busy={changingState === "draft"}
+                  onPress={() => changeState("draft", { draft: !detail.draft })}
+                  styles={ui.styles}
+                  theme={ui.theme}
+                />
+              ) : null}
+              {stateAction ? (
+                <Button
+                  label={stateAction === "close" ? (isMr ? "Close merge request" : "Close issue") : "Reopen"}
+                  busy={changingState === "state"}
+                  onPress={() => changeState("state", { state: stateAction })}
+                  styles={ui.styles}
+                  theme={ui.theme}
+                />
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </View>
 
-      <View style={ui.styles.card}>
-        <View style={ui.styles.cardBody}>
-          {detail.descriptionHtml.trim() ? (
-            <HtmlBody html={detail.descriptionHtml} host={ui.host} theme={ui.theme} />
-          ) : (
-            <Text style={ui.styles.muted}>No description.</Text>
-          )}
+      {!editing ? (
+        <View style={ui.styles.card}>
+          <View style={ui.styles.cardBody}>
+            {detail.descriptionHtml.trim() ? (
+              <HtmlBody html={detail.descriptionHtml} host={ui.host} theme={ui.theme} />
+            ) : (
+              <Text style={ui.styles.muted}>No description.</Text>
+            )}
+          </View>
         </View>
-      </View>
+      ) : null}
 
       <View style={ui.styles.row}>
         <Text style={ui.styles.sectionTitle}>Activity</Text>
         <View style={ui.styles.spacer} />
         {systemCount > 0 ? (
-          <Pressable accessibilityRole="button" onPress={() => setShowSystem((value) => !value)}>
-            <Text style={ui.styles.small}>
-              {showSystem ? "Hide" : "Show"} {systemCount} system {systemCount === 1 ? "note" : "notes"}
-            </Text>
-          </Pressable>
+          <Link
+            label={`${showSystem ? "Hide" : "Show"} ${systemCount} system ${systemCount === 1 ? "note" : "notes"}`}
+            onPress={() => setShowSystem((value) => !value)}
+            ui={ui}
+          />
         ) : null}
       </View>
 
       {visible.map((discussion) =>
         discussion.notes[0]?.system ? (
           <Text key={discussion.id} style={ui.styles.systemNote}>
-            @{discussion.notes[0].author?.username ?? "ghost"}{" "}
-            {htmlToText(discussion.notes[0].bodyHtml)} · {timeAgo(discussion.notes[0].createdAt)}
+            @{discussion.notes[0].author?.username ?? "ghost"} {htmlToText(discussion.notes[0].bodyHtml)} ·{" "}
+            {timeAgo(discussion.notes[0].createdAt)}
           </Text>
         ) : (
           <Thread
             key={discussion.id}
             discussion={discussion}
-            onReply={(discussionId, body) => post.mutateAsync({ noteableId: detail.id, body, discussionId })}
-            onResolve={(discussionId, value) => toggle.mutateAsync({ discussionId, resolve: value })}
+            actions={actions}
+            onOpenCode={isMr ? (path) => onOpenChanges(path) : undefined}
             ui={ui}
           />
         ),
       )}
 
-      <View style={ui.styles.card}>
-        <View style={ui.styles.cardBody}>
-          <Composer
-            placeholder="Write a comment…"
-            sendLabel="Comment"
-            onSend={(body) => post.mutateAsync({ noteableId: detail.id, body })}
-            ui={ui}
-          />
+      {detail.canComment ? (
+        <View style={ui.styles.card}>
+          <View style={ui.styles.cardBody}>
+            <Composer
+              placeholder="Write a comment…"
+              sendLabel="Comment"
+              onSend={(body) => write(() => addNote({ noteableId: detail.id, body, mode: "comment" }))}
+              secondary={{
+                label: "Start thread",
+                onSend: (body) => write(() => addNote({ noteableId: detail.id, body, mode: "thread" })),
+              }}
+              ui={ui}
+            />
+          </View>
         </View>
-      </View>
+      ) : null}
+
+      <PeoplePicker
+        title={picker === "reviewers" ? "Reviewers" : "Assignees"}
+        open={picker === "assignees" || picker === "reviewers"}
+        onClose={() => setPicker(null)}
+        projectPath={detail.projectPath}
+        initial={picker === "reviewers" ? detail.reviewers : detail.assignees}
+        onSave={(usernames) =>
+          write(() =>
+            setPeople({ ...itemRef, field: picker === "reviewers" ? "reviewers" : "assignees", usernames }),
+          )
+        }
+        ui={ui}
+      />
+      <LabelPicker
+        open={picker === "labels"}
+        onClose={() => setPicker(null)}
+        projectPath={detail.projectPath}
+        initial={detail.labels}
+        onSave={(labelIds) => write(() => setLabels({ ...itemRef, labelIds }))}
+        ui={ui}
+      />
     </View>
   );
 }

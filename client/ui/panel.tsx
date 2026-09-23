@@ -7,6 +7,7 @@ import { Text, View } from "react-native";
 import { authStatusRpc, listsRpc, type ItemRef, type Job, type PipelineRef } from "../../shared/contract";
 import { openGitLabSettings } from "../plugin-client";
 import { Button, Centered, errorText, IconButton } from "./common";
+import { ChangesView } from "./changes";
 import { ItemDetail } from "./detail";
 import { ItemLists } from "./lists";
 import { JobLogView, PipelineView } from "./pipeline";
@@ -16,6 +17,7 @@ import { useStyles } from "./styles";
 /** What the panel shows, as a stack: back pops one level. */
 type Screen =
   | { kind: "item"; ref: ItemRef }
+  | { kind: "changes"; ref: ItemRef; focusPath?: string }
   | { kind: "pipeline"; ref: PipelineRef }
   | { kind: "job"; projectPath: string; job: Job };
 
@@ -78,6 +80,17 @@ export function GitLabPanel({ theme }: PluginWorkspacePanelProps) {
         itemRef={top.ref}
         onBack={back}
         onOpenPipeline={(ref) => push({ kind: "pipeline", ref })}
+        onOpenChanges={(focusPath) => push({ kind: "changes", ref: top.ref, focusPath })}
+        ui={{ theme, styles, host: status.data.host }}
+      />
+    );
+  } else if (top?.kind === "changes") {
+    body = (
+      <ChangesView
+        key={`changes:${top.ref.projectPath}:${top.ref.iid}:${top.focusPath ?? ""}`}
+        itemRef={top.ref}
+        focusPath={top.focusPath}
+        onBack={back}
         ui={{ theme, styles, host: status.data.host }}
       />
     );
