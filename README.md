@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icon.png" width="320" alt="Paseo GitLab">
+</p>
+
 # GitLab for Paseo
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
