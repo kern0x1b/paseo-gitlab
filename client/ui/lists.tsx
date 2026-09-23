@@ -4,8 +4,8 @@ import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { todoDoneRpc, type ItemRef, type ListItem, type Lists, type Todo } from "../../shared/contract";
-import { AvatarStack, Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
+import { todoDoneRpc, type ItemRef, type ListItem, type Lists, type Person, type Todo } from "../../shared/contract";
+import { Avatar, Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
 import { byRole, defaultRoleFilter, ROLE_FILTERS, type RoleFilter } from "./filters";
 import { humanize, mergeStatusLabel, shortReference, timeAgo } from "./format";
 import { LISTS_KEY } from "./queries";
@@ -34,40 +34,65 @@ function todoAction(action: string): string {
   return TODO_ACTIONS[action] ?? humanize(action).toLowerCase();
 }
 
+/** One labelled column of people: a heading, then their avatars side by side, wrapping when there are many. */
+function PeopleColumn({ title, people, styles }: { title: string; people: Person[]; styles: Styles }) {
+  return (
+    <View style={{ flex: 1, alignItems: "center", gap: 6 }}>
+      <Text style={[styles.muted, { fontWeight: "600" }]}>{title}</Text>
+      {people.length === 0 ? (
+        <Text style={styles.muted}>—</Text>
+      ) : (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6 }}>
+          {people.map((person) => (
+            <Avatar key={person.username} person={person} styles={styles} size={32} />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: ItemRef) => void; ui: Ui }) {
   const { styles, theme } = ui;
   const mergeStatus =
     item.kind === "mr" && item.mergeStatus !== "DRAFT_STATUS" ? mergeStatusLabel(item.mergeStatus) : null;
-  // "by you" says nothing in lists that are yours; name the author only when it is someone else.
-  const author = item.author && item.author.username !== ui.viewer ? item.author.name : null;
-  // The people you would want to reach: who reviews an MR, who works on an issue.
-  const people = item.kind === "mr" ? item.reviewers : item.assignees;
-  const meta = [shortReference(item.reference), author ? `by ${author}` : null, timeAgo(item.updatedAt), mergeStatus].filter(
-    Boolean,
-  );
+  const meta = [
+    shortReference(item.reference),
+    timeAgo(item.updatedAt),
+    item.userNotesCount > 0 ? `💬 ${item.userNotesCount}` : null,
+    mergeStatus,
+  ].filter(Boolean);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.reference} ${item.title}`}
       onPress={() => onOpen({ kind: item.kind, projectPath: item.projectPath, iid: item.iid })}
-      style={({ pressed }) => [styles.listRow, { flexDirection: "row", gap: 10 }, pressed ? styles.listRowPressed : null]}
+      style={({ pressed }) => [styles.listRow, { gap: 10 }, pressed ? styles.listRowPressed : null]}
     >
-      <View style={{ width: 8, paddingTop: 6, alignItems: "center" }}>
-        <PipelineDot status={item.pipelineStatus} theme={theme} styles={styles} />
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={{ width: 8, paddingTop: 6, alignItems: "center" }}>
+          <PipelineDot status={item.pipelineStatus} theme={theme} styles={styles} />
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={[styles.listTitle, { fontWeight: "500" }]} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text style={styles.small} numberOfLines={1}>
+            {meta.join(" · ")}
+          </Text>
+          {item.confidential ? (
+            <Badge label="Confidential" styles={styles} color={theme.colors.statusWarning} />
+          ) : null}
+          <Labels labels={item.labels} styles={styles} />
+        </View>
       </View>
-      <View style={{ flex: 1, gap: 3 }}>
-        <Text style={[styles.listTitle, { fontWeight: "500" }]} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.small} numberOfLines={1}>
-          {meta.join(" · ")}
-        </Text>
-        {item.confidential ? <Badge label="Confidential" styles={styles} color={theme.colors.statusWarning} /> : null}
-        <Labels labels={item.labels} styles={styles} />
-      </View>
-      <View style={{ alignItems: "flex-end", gap: 4, minWidth: 28 }}>
-        {people.length > 0 ? <AvatarStack people={people} styles={styles} max={3} /> : null}
-        {item.userNotesCount > 0 ? <Text style={styles.small}>💬 {item.userNotesCount}</Text> : null}
+      <View style={{ flexDirection: "row", borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: 10 }}>
+        <PeopleColumn title={item.assignees.length > 1 ? "Assignees" : "Assignee"} people={item.assignees} styles={styles} />
+        {item.kind === "mr" ? (
+          <PeopleColumn title="Reviewers" people={item.reviewers} styles={styles} />
+        ) : (
+          <PeopleColumn title="Author" people={item.author ? [item.author] : []} styles={styles} />
+        )}
       </View>
     </Pressable>
   );
