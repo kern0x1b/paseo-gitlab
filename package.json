@@ -28,5 +28,13 @@
     "@types/node": "^24.0.0"
   },
   "description": "A mini GitLab in the Paseo explorer: issues assigned to you, your merge requests and review requests, with descriptions, labels, threads, replies and resolve.",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kern0x1b/paseo-gitlab.git"
+  },
+  "homepage": "https://github.com/kern0x1b/paseo-gitlab#readme",
+  "bugs": {
+    "url": "https://github.com/kern0x1b/paseo-gitlab/issues"
+  }
 }
