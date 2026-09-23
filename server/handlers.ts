@@ -12,12 +12,17 @@ import type {
   PipelineRef,
   DraftNote,
   WorkspaceState,
+  SavedQuery,
+  SearchQuery,
+  ListItem,
 } from "../shared/contract";
+import { randomUUID } from "node:crypto";
+import { readSavedQueries, writeSavedQueries } from "./state";
 import { authStatus, requireConnection, type AuthDeps } from "./auth";
 import { assertNoMutationErrors, graphql, GitLabError, rest, restWrite, type Connection } from "./gitlab";
 import { fetchDiffs } from "./diff";
 import { fetchImage } from "./images";
-import { parseJobLog } from "./log";
+import { MAX_LOG_LINES, parseJobLog } from "./log";
 import { agentPrompt, failedJobsOf, itemContext, jobPrompt, logTail, type FailedJobLog } from "./agent-context";
 import { readCheckout } from "./workspace";
 import {
@@ -26,6 +31,13 @@ import {
   MERGE_MUTATION,
   TOGGLE_REACTION_MUTATION,
   CREATE_MERGE_REQUEST_MUTATION,
+  REFERENCE_SEARCH_QUERY,
+  referenceVariables,
+  RUN_PIPELINE_MUTATION,
+  searchQuery,
+  searchVariables,
+  toSearchResults,
+  type RawSearchResult,
   CREATE_DISCUSSION_MUTATION,
   CREATE_NOTE_MUTATION,
   DESTROY_NOTE_MUTATION,
@@ -63,6 +75,10 @@ import {
 } from "./queries";
 
 const LOG_TIMEOUT_MS = 30_000;
+/** "Show the full log": still bounded, so a runaway job cannot freeze the panel. */
+const FULL_LOG_LINES = 50_000;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const SAVED_QUERY_LIMIT = 30;
 
 function mergeRequestPath(ref: { projectPath: string; iid: string }): string {
   return `/projects/${encodeURIComponent(ref.projectPath)}/merge_requests/${encodeURIComponent(ref.iid)}`;
@@ -317,7 +333,7 @@ export function createHandlers(deps: AuthDeps) {
       return toPipeline(ref.projectPath, raw, connection.host);
     },
 
-    async jobLog(input: { projectPath: string; jobId: string }): Promise<JobLog> {
+    async jobLog(input: { projectPath: string; jobId: string; full?: boolean }): Promise<JobLog> {
       const connection = await requireConnection(deps);
       const id = numericId(input.jobId);
       if (!id) {
@@ -330,7 +346,7 @@ export function createHandlers(deps: AuthDeps) {
       if (!response.ok) {
         throw new GitLabError(`GitLab returned ${response.status} for the job log.`, response.status);
       }
-      return parseJobLog(await response.text());
+      return parseJobLog(await response.text(), input.full ? FULL_LOG_LINES : MAX_LOG_LINES);
     },
 
     async jobAction(input: { jobId: string; action: "retry" | "play" | "cancel" }): Promise<{ ok: true }> {
@@ -503,6 +519,94 @@ export function createHandlers(deps: AuthDeps) {
         await restWrite(connection, "POST", `${base}/approve`, undefined, deps.fetch);
       }
       return { ok: true };
+    },
+
+    async referenceSearch(input: { projectPath: string; kind: "issue" | "mr"; term: string }): Promise<{
+      items: { iid: string; title: string }[];
+    }> {
+      const connection = await requireConnection(deps);
+      const data = await graphql<{
+        project: {
+          issues?: { nodes: { iid: string; title: string }[] };
+          mergeRequests?: { nodes: { iid: string; title: string }[] };
+        } | null;
+      }>(connection, REFERENCE_SEARCH_QUERY[input.kind], referenceVariables(input.projectPath, input.term), deps.fetch);
+      const rows = input.kind === "issue" ? data.project?.issues?.nodes : data.project?.mergeRequests?.nodes;
+      return { items: (rows ?? []).map(({ iid, title }) => ({ iid, title })) };
+    },
+
+    async markdownPreview(input: { projectPath: string; text: string }): Promise<{ html: string }> {
+      const connection = await requireConnection(deps);
+      const result = await restWrite<{ html: string }>(
+        connection,
+        "POST",
+        "/markdown",
+        { text: input.text, gfm: true, project: input.projectPath },
+        deps.fetch,
+      );
+      return { html: result?.html ?? "" };
+    },
+
+    async upload(input: { projectPath: string; filename: string; contentType: string; base64: string }): Promise<{
+      markdown: string;
+    }> {
+      const connection = await requireConnection(deps);
+      const bytes = Buffer.from(input.base64, "base64");
+      if (bytes.length > MAX_UPLOAD_BYTES) {
+        throw new Error("The file is larger than 10 MB.");
+      }
+      const form = new FormData();
+      form.append("file", new Blob([bytes], { type: input.contentType || "application/octet-stream" }), input.filename);
+      const response = await deps.fetch(
+        `${connection.host}/api/v4/projects/${encodeURIComponent(input.projectPath)}/uploads`,
+        { method: "POST", headers: { Authorization: `Bearer ${connection.token}` }, body: form },
+      );
+      if (!response.ok) {
+        throw new GitLabError(`GitLab returned ${response.status} for the upload.`, response.status);
+      }
+      const uploaded = (await response.json()) as { markdown?: string };
+      if (!uploaded.markdown) {
+        throw new Error("GitLab did not return the uploaded file.");
+      }
+      return { markdown: uploaded.markdown };
+    },
+
+    async search(input: SearchQuery): Promise<{ items: ListItem[] }> {
+      const connection = await requireConnection(deps);
+      const raw = await graphql<RawSearchResult>(connection, searchQuery(input.kind), searchVariables(input), deps.fetch);
+      return { items: toSearchResults(input.kind, raw) };
+    },
+
+    savedQueries(): { queries: SavedQuery[] } {
+      return { queries: readSavedQueries<SavedQuery>() };
+    },
+
+    saveQuery(input: SearchQuery & { name: string }): { queries: SavedQuery[] } {
+      const queries = [...readSavedQueries<SavedQuery>(), { ...input, id: randomUUID() }].slice(-SAVED_QUERY_LIMIT);
+      writeSavedQueries(queries);
+      return { queries };
+    },
+
+    deleteQuery(input: { id: string }): { queries: SavedQuery[] } {
+      const queries = readSavedQueries<SavedQuery>().filter((query) => query.id !== input.id);
+      writeSavedQueries(queries);
+      return { queries };
+    },
+
+    async runPipeline(input: { projectPath: string; ref: string; mergeRequestIid?: string }): Promise<PipelineRef> {
+      const connection = await requireConnection(deps);
+      const data = await graphql<{ pipelineCreate: { pipeline: { iid: string } | null; errors?: string[] } | null }>(
+        connection,
+        RUN_PIPELINE_MUTATION,
+        { projectPath: input.projectPath, ref: input.ref, mergeRequestIid: input.mergeRequestIid ?? null },
+        deps.fetch,
+      );
+      assertNoMutationErrors(data.pipelineCreate, "start the pipeline");
+      const iid = data.pipelineCreate?.pipeline?.iid;
+      if (!iid) {
+        throw new Error("GitLab did not return the new pipeline.");
+      }
+      return { projectPath: input.projectPath, iid };
     },
 
     async workspace(input: { directory: string }): Promise<WorkspaceState> {

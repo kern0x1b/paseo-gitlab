@@ -131,6 +131,7 @@ query PaseoGitLabPipeline($path: ID!, $iid: ID!) {
           jobs(first: 100) {
             nodes {
               id name status duration startedAt allowFailure manualJob retryable cancelable playable webPath
+              artifacts { nodes { name fileType size downloadPath } }
               downstreamPipeline { iid status project { fullPath } }
             }
           }
@@ -299,6 +300,7 @@ interface RawJob {
   cancelable: boolean;
   playable: boolean;
   webPath: string | null;
+  artifacts?: Nodes<{ name: string; fileType: string; size: number | null; downloadPath: string | null }>;
   downstreamPipeline: { iid: string; status: string; project: { fullPath: string } | null } | null;
 }
 
@@ -578,6 +580,14 @@ function toJob(job: RawJob, host: string): Job {
     playable: job.playable,
     cancelable: job.cancelable,
     webUrl: job.webPath ? `${host}${job.webPath}` : host,
+    artifacts: nodes(job.artifacts)
+      .filter((artifact) => artifact.fileType !== "TRACE" && artifact.downloadPath)
+      .map((artifact) => ({
+        name: artifact.name,
+        fileType: artifact.fileType,
+        size: artifact.size,
+        url: `${host}${artifact.downloadPath}`,
+      })),
     downstream:
       job.downstreamPipeline && downstreamPath
         ? { projectPath: downstreamPath, iid: job.downstreamPipeline.iid, status: job.downstreamPipeline.status }
@@ -729,4 +739,86 @@ mutation PaseoGitLabMerge($projectPath: ID!, $iid: String!, $sha: String!, $stra
 export const TOGGLE_REACTION_MUTATION = `
 mutation PaseoGitLabToggleReaction($awardableId: AwardableID!, $name: String!) {
   awardEmojiToggle(input: { awardableId: $awardableId, name: $name }) { ${MUTATION_RESULT} }
+}`;
+
+/** A number is looked up as an iid, anything else as a title search. */
+export const REFERENCE_SEARCH_QUERY = {
+  issue: `
+query PaseoGitLabIssueRefs($path: ID!, $search: String, $iids: [String!]) {
+  project(fullPath: $path) { issues(search: $search, iids: $iids, first: 8, sort: UPDATED_DESC) { nodes { iid title } } }
+}`,
+  mr: `
+query PaseoGitLabMergeRequestRefs($path: ID!, $search: String, $iids: [String!]) {
+  project(fullPath: $path) { mergeRequests(search: $search, iids: $iids, first: 8, sort: UPDATED_DESC) { nodes { iid title } } }
+}`,
+} as const;
+
+export function referenceVariables(projectPath: string, term: string): Record<string, unknown> {
+  const trimmed = term.trim();
+  return /^\d+$/.test(trimmed)
+    ? { path: projectPath, search: null, iids: [trimmed] }
+    : { path: projectPath, search: trimmed || null, iids: null };
+}
+
+const SEARCH_STATE = { opened: "opened", closed: "closed", merged: "merged", all: "all" } as const;
+
+export function searchQuery(kind: ItemKind): string {
+  return kind === "issue"
+    ? `
+query PaseoGitLabSearchIssues(
+  $path: ID!, $search: String, $state: IssuableState, $label: [String], $author: String, $assignee: [String!]
+) {
+  project(fullPath: $path) {
+    issues(search: $search, state: $state, labelName: $label, authorUsername: $author, assigneeUsernames: $assignee,
+      first: 50, sort: UPDATED_DESC) { nodes { ${ISSUE_ROW} } }
+  }
+}`
+    : `
+query PaseoGitLabSearchMergeRequests(
+  $path: ID!, $search: String, $state: MergeRequestState, $label: [String], $author: String, $assignee: String
+) {
+  project(fullPath: $path) {
+    mergeRequests(search: $search, state: $state, labelName: $label, authorUsername: $author, assigneeUsername: $assignee,
+      first: 50, sort: UPDATED_DESC) { nodes { ${MR_ROW} } }
+  }
+}`;
+}
+
+export function searchVariables(query: {
+  kind: ItemKind;
+  projectPath: string;
+  search: string;
+  state: keyof typeof SEARCH_STATE;
+  label: string;
+  author: string;
+  assignee: string;
+}): Record<string, unknown> {
+  const trim = (value: string) => value.trim().replace(/^@/, "") || null;
+  const assignee = trim(query.assignee);
+  return {
+    path: query.projectPath,
+    search: query.search.trim() || null,
+    // Issues have no "merged" state; asking for it means closed.
+    state: query.state === "all" ? null : query.kind === "issue" && query.state === "merged" ? "closed" : query.state,
+    label: query.label.trim() ? query.label.split(",").map((label) => label.trim()).filter(Boolean) : null,
+    author: trim(query.author),
+    assignee: assignee ? (query.kind === "issue" ? [assignee] : assignee) : null,
+  };
+}
+
+export interface RawSearchResult {
+  project: { issues?: Nodes<RawRow>; mergeRequests?: Nodes<RawRow> } | null;
+}
+
+export function toSearchResults(kind: ItemKind, raw: RawSearchResult): ListItem[] {
+  const rows = kind === "issue" ? nodes(raw.project?.issues) : nodes(raw.project?.mergeRequests);
+  return rows.map((row) => toListItem(kind, row, []));
+}
+
+export const RUN_PIPELINE_MUTATION = `
+mutation PaseoGitLabRunPipeline($projectPath: ID!, $ref: String!, $mergeRequestIid: String) {
+  pipelineCreate(input: { projectPath: $projectPath, ref: $ref, mergeRequestIid: $mergeRequestIid }) {
+    pipeline { iid }
+    errors
+  }
 }`;

@@ -177,6 +177,8 @@ export const JobSchema = z.object({
   playable: z.boolean(),
   cancelable: z.boolean(),
   webUrl: z.string(),
+  /** Downloadable files the job kept; the log itself is left out. */
+  artifacts: z.array(z.object({ name: z.string(), fileType: z.string(), size: z.number().nullable(), url: z.string() })),
   /** A trigger job's child or multi-project pipeline. */
   downstream: PipelineRefSchema.extend({ status: z.string() }).nullable(),
 });
@@ -408,7 +410,8 @@ export const pipelineRpc = defineRpc({
 
 export const jobLogRpc = defineRpc({
   name: "gitlab.job.log",
-  input: z.object({ projectPath: z.string(), jobId: z.string() }),
+  /** `full` lifts the usual cap on how many lines come back. */
+  input: z.object({ projectPath: z.string(), jobId: z.string(), full: z.boolean().optional() }),
   output: JobLogSchema,
 });
 
@@ -545,4 +548,73 @@ export const submitReviewRpc = defineRpc({
   name: "gitlab.review.submit",
   input: MergeRequestRefSchema.extend({ approve: z.boolean() }),
   output: z.object({ ok: z.literal(true) }),
+});
+
+export const referenceSearchRpc = defineRpc({
+  name: "gitlab.references.search",
+  input: z.object({ projectPath: z.string(), kind: ItemKindSchema, term: z.string() }),
+  output: z.object({ items: z.array(z.object({ iid: z.string(), title: z.string() })) }),
+});
+
+export const markdownPreviewRpc = defineRpc({
+  name: "gitlab.markdown.preview",
+  input: z.object({ projectPath: z.string(), text: z.string() }),
+  output: z.object({ html: z.string() }),
+});
+
+export const uploadRpc = defineRpc({
+  name: "gitlab.upload",
+  input: z.object({
+    projectPath: z.string(),
+    filename: z.string().min(1).max(200),
+    contentType: z.string(),
+    /** Base64 of the file; capped so a pasted screenshot fits and a video does not. */
+    base64: z.string().max(14_000_000),
+  }),
+  output: z.object({ markdown: z.string() }),
+});
+
+export const SearchQuerySchema = z.object({
+  kind: ItemKindSchema,
+  projectPath: z.string(),
+  search: z.string(),
+  state: z.enum(["opened", "closed", "merged", "all"]),
+  label: z.string(),
+  author: z.string(),
+  assignee: z.string(),
+});
+
+export const SavedQuerySchema = SearchQuerySchema.extend({ id: z.string(), name: z.string() });
+
+export type SearchQuery = z.output<typeof SearchQuerySchema>;
+export type SavedQuery = z.output<typeof SavedQuerySchema>;
+
+export const searchRpc = defineRpc({
+  name: "gitlab.search",
+  input: SearchQuerySchema,
+  output: z.object({ items: z.array(ListItemSchema) }),
+});
+
+export const savedQueriesRpc = defineRpc({
+  name: "gitlab.queries.list",
+  input: z.object({}),
+  output: z.object({ queries: z.array(SavedQuerySchema) }),
+});
+
+export const saveQueryRpc = defineRpc({
+  name: "gitlab.queries.save",
+  input: SearchQuerySchema.extend({ name: z.string().min(1).max(60) }),
+  output: z.object({ queries: z.array(SavedQuerySchema) }),
+});
+
+export const deleteQueryRpc = defineRpc({
+  name: "gitlab.queries.delete",
+  input: z.object({ id: z.string() }),
+  output: z.object({ queries: z.array(SavedQuerySchema) }),
+});
+
+export const runPipelineRpc = defineRpc({
+  name: "gitlab.pipeline.run",
+  input: z.object({ projectPath: z.string(), ref: z.string(), mergeRequestIid: z.string().optional() }),
+  output: PipelineRefSchema,
 });

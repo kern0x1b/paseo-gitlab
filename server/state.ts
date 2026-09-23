@@ -35,3 +35,25 @@ export function writeHost(host: string): void {
 export function clearHost(): void {
   rmSync(configFile(), { force: true });
 }
+
+/** Saved searches: a small list the user curates, kept next to the host. */
+function queriesFile(): string {
+  return join(stateDir(), "queries.json");
+}
+
+export function readSavedQueries<T>(): T[] {
+  try {
+    const parsed = JSON.parse(readFileSync(queriesFile(), "utf8")) as { queries?: unknown };
+    return Array.isArray(parsed.queries) ? (parsed.queries as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeSavedQueries<T>(queries: T[]): void {
+  mkdirSync(stateDir(), { recursive: true, mode: 0o700 });
+  const path = queriesFile();
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, JSON.stringify({ queries }), { mode: 0o600 });
+  renameSync(temporary, path);
+}

@@ -3,6 +3,7 @@ import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
+import { ProjectContext, useProjectPath, usePasteUpload, useSuggestions } from "./composer-tools";
 import { Pressable, Text, View } from "react-native";
 import {
   addDraftRpc,
@@ -10,7 +11,9 @@ import {
   applySuggestionRpc,
   deleteNoteRpc,
   detailRpc,
+  markdownPreviewRpc,
   resolveRpc,
+  runPipelineRpc,
   setLabelsRpc,
   setPeopleRpc,
   toggleReactionRpc,
@@ -109,6 +112,24 @@ export function Composer({
 }) {
   const [body, setBody] = useState(initialValue);
   const [sending, setSending] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [element, setElement] = useState<HTMLElement | null>(null);
+  const projectPath = useProjectPath();
+  const toast = useToast();
+  const { suggestions, start } = useSuggestions(body, projectPath);
+  const uploading = usePasteUpload(
+    element,
+    projectPath,
+    (markdown) => setBody((current) => (current ? `${current}\n${markdown}\n` : `${markdown}\n`)),
+    (message) => toast.error(message),
+  );
+  const renderPreview = useRpc(markdownPreviewRpc);
+  const preview = useQuery({
+    queryKey: ["gitlab", "preview", projectPath, body],
+    queryFn: () => renderPreview({ projectPath: projectPath ?? "", text: body }),
+    enabled: previewing && Boolean(projectPath) && Boolean(body.trim()),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   const send = async (which: string) => {
     const text = body.trim();
     const action = which === "primary" ? onSend : others.find((other) => other.label === which)?.onSend;
@@ -127,7 +148,19 @@ export function Composer({
   };
   return (
     <View style={{ gap: 8 }}>
+      {previewing ? (
+        <View style={[ui.styles.input, { minHeight: 64 }]}>
+          {preview.isPending && body.trim() ? (
+            <Text style={ui.styles.muted}>Rendering…</Text>
+          ) : preview.data?.html ? (
+            <HtmlBody html={preview.data.html} host={ui.host} theme={ui.theme} />
+          ) : (
+            <Text style={ui.styles.muted}>Nothing to preview.</Text>
+          )}
+        </View>
+      ) : null}
       <TextInput
+        ref={(node) => setElement(node as unknown as HTMLElement | null)}
         value={body}
         onChangeText={setBody}
         placeholder={placeholder}
@@ -135,7 +168,7 @@ export function Composer({
         multiline
         autoFocus={autoFocus}
         editable={sending === null}
-        style={ui.styles.input}
+        style={[ui.styles.input, previewing ? { display: "none" } : null]}
         onKeyPress={(event) => {
           const native = event.nativeEvent as { key: string; metaKey?: boolean; ctrlKey?: boolean };
           if (native.key === "Enter" && (native.metaKey || native.ctrlKey)) {
@@ -143,7 +176,33 @@ export function Composer({
           }
         }}
       />
+      {!previewing && suggestions.length > 0 && start !== null ? (
+        <View style={ui.styles.card}>
+          {suggestions.map((suggestion) => (
+            <Pressable
+              key={suggestion.key}
+              accessibilityRole="button"
+              onPress={() => setBody((current) => `${current.slice(0, start)}${suggestion.insert}`)}
+              style={({ pressed }) => [ui.styles.listRow, ui.styles.row, pressed ? ui.styles.listRowPressed : null]}
+            >
+              <Text style={ui.styles.text}>{suggestion.label}</Text>
+              <Text style={[ui.styles.small, { flex: 1 }]} numberOfLines={1}>
+                {suggestion.detail}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {uploading ? <Text style={ui.styles.small}>Uploading the pasted image…</Text> : null}
       <View style={[ui.styles.row, { flexWrap: "wrap" }]}>
+        {projectPath ? (
+          <Button
+            label={previewing ? "Write" : "Preview"}
+            onPress={() => setPreviewing((value) => !value)}
+            styles={ui.styles}
+            theme={ui.theme}
+          />
+        ) : null}
         <View style={ui.styles.spacer} />
         {onCancel ? <Button label="Cancel" onPress={onCancel} styles={ui.styles} theme={ui.theme} /> : null}
         {templates.map((template) => (
@@ -647,7 +706,10 @@ export function ItemDetail({
   const updateItem = useRpc(updateItemRpc);
   const setPeople = useRpc(setPeopleRpc);
   const setLabels = useRpc(setLabelsRpc);
+  const runPipeline = useRpc(runPipelineRpc);
+  const [startingPipeline, setStartingPipeline] = useState(false);
   const write = useWrite(itemRef);
+  const toast = useToast();
   const [showSystem, setShowSystem] = useState(false);
   const [editing, setEditing] = useState(false);
   const [picker, setPicker] = useState<"assignees" | "reviewers" | "labels" | null>(null);
@@ -701,6 +763,7 @@ export function ItemDetail({
   };
 
   return (
+    <ProjectContext.Provider value={detail.projectPath}>
     <View style={{ gap: 12 }}>
       <Header
         detail={detail}
@@ -772,6 +835,27 @@ export function ItemDetail({
                 </Text>
               </View>
             </Pressable>
+          ) : null}
+          {isMr && detail.state === "opened" && detail.sourceBranch && detail.canComment ? (
+            <View style={ui.styles.row}>
+              <View style={ui.styles.spacer} />
+              <ConfirmButton
+                label="Run pipeline"
+                title="Run a new pipeline?"
+                message={`GitLab starts a new merge request pipeline for ${detail.sourceBranch}. It uses runner time like any other run.`}
+                confirmLabel="Run pipeline"
+                busy={startingPipeline}
+                onConfirm={() => {
+                  setStartingPipeline(true);
+                  void runPipeline({ projectPath: detail.projectPath, ref: detail.sourceBranch!, mergeRequestIid: detail.iid })
+                    .then((pipeline) => onOpenPipeline(pipeline))
+                    .catch((error: unknown) => toast.error(errorText(error)))
+                    .finally(() => setStartingPipeline(false));
+                }}
+                styles={ui.styles}
+                theme={ui.theme}
+              />
+            </View>
           ) : null}
           {isMr ? (
             <Pressable
@@ -920,5 +1004,6 @@ export function ItemDetail({
         ui={ui}
       />
     </View>
+    </ProjectContext.Provider>
   );
 }

@@ -26,6 +26,14 @@ import {
   authDisconnectRpc,
   authStatusRpc,
   clientLogRpc,
+  deleteQueryRpc,
+  markdownPreviewRpc,
+  referenceSearchRpc,
+  runPipelineRpc,
+  savedQueriesRpc,
+  saveQueryRpc,
+  searchRpc,
+  uploadRpc,
   createIssueRpc,
   createMergeRequestRpc,
   detailRpc,
@@ -59,6 +67,14 @@ export default function contribute(server: PluginServerContext) {
   server.handle(diffsRpc, (input) => handlers.diffs(input));
   server.handle(addDiffNoteRpc, (input) => handlers.addDiffNote(input));
   server.handle(workspaceRpc, (input) => handlers.workspace(input));
+  server.handle(referenceSearchRpc, (input) => handlers.referenceSearch(input));
+  server.handle(markdownPreviewRpc, (input) => handlers.markdownPreview(input));
+  server.handle(uploadRpc, (input) => handlers.upload(input));
+  server.handle(searchRpc, (input) => handlers.search(input));
+  server.handle(savedQueriesRpc, () => handlers.savedQueries());
+  server.handle(saveQueryRpc, (input) => handlers.saveQuery(input));
+  server.handle(deleteQueryRpc, (input) => handlers.deleteQuery(input));
+  server.handle(runPipelineRpc, (input) => handlers.runPipeline(input));
   server.handle(mergeRequestActionRpc, (input) => handlers.mergeRequestAction(input));
   server.handle(applySuggestionRpc, (input) => handlers.applySuggestion(input));
   server.handle(toggleReactionRpc, (input) => handlers.toggleReaction(input));

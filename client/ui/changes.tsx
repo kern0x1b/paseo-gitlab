@@ -17,6 +17,7 @@ import { Button, Centered, errorText, IconButton } from "./common";
 import { Composer, Thread, useNoteActions, useWrite, type NoteActions, type Ui } from "./detail";
 import { detailKey } from "./queries";
 import { draftsKey, ReviewBar } from "./review";
+import { ProjectContext } from "./composer-tools";
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
 
@@ -360,6 +361,7 @@ export function ChangesView({
   };
 
   return (
+    <ProjectContext.Provider value={itemRef.projectPath}>
     <View style={{ gap: 12 }}>
       <View style={styles.row}>
         <IconButton icon="ChevronLeft" label="Back" onPress={onBack} theme={theme} styles={styles} />
@@ -415,5 +417,6 @@ export function ChangesView({
         />
       ))}
     </View>
+    </ProjectContext.Provider>
   );
 }

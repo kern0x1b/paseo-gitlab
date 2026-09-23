@@ -9,9 +9,10 @@ import { Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
 import { byRole, defaultRoleFilter, ROLE_FILTERS, type RoleFilter } from "./filters";
 import { humanize, mergeStatusLabel, shortReference, timeAgo } from "./format";
 import { LISTS_KEY } from "./queries";
+import { SearchPanel } from "./search";
 import type { Styles } from "./styles";
 
-type TabId = "todos" | "issues" | "mrs" | "review";
+type TabId = "todos" | "issues" | "mrs" | "review" | "search";
 
 type Ui = { theme: PluginTheme; styles: Styles };
 
@@ -33,7 +34,7 @@ function todoAction(action: string): string {
   return TODO_ACTIONS[action] ?? humanize(action).toLowerCase();
 }
 
-function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: ItemRef) => void; ui: Ui }) {
+export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: ItemRef) => void; ui: Ui }) {
   const { styles, theme } = ui;
   const mergeStatus = item.kind === "mr" ? mergeStatusLabel(item.mergeStatus) : null;
   // Only worth saying when it is not the obvious one: yours as author, but assigned to someone else.
@@ -176,6 +177,7 @@ const TABS: { id: TabId; label: string; count: (lists: Lists) => number; empty: 
     count: (lists) => lists.reviewMergeRequests.length,
     empty: "Nobody is waiting for your review.",
   },
+  { id: "search", label: "Search", count: () => -1, empty: "" },
 ];
 
 function firstTab(lists: Lists): TabId {
@@ -201,6 +203,8 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
   const unfiltered = tab === "issues" ? lists.issues : tab === "mrs" ? lists.mergeRequests : lists.reviewMergeRequests;
   const items = filterable ? byRole(unfiltered, roleFilter[filterable]) : unfiltered;
   const empty = tab === "todos" ? lists.todos.length === 0 : items.length === 0;
+  const defaultProject =
+    lists.mergeRequests[0]?.projectPath ?? lists.issues[0]?.projectPath ?? lists.reviewMergeRequests[0]?.projectPath ?? "";
   const emptyText = filterable
     ? (ROLE_FILTERS.find((filter) => filter.id === roleFilter[filterable])?.empty ?? current.empty)
     : current.empty;
@@ -219,7 +223,8 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
               style={[styles.tab, active ? styles.tabActive : null]}
             >
               <Text style={[styles.tabLabel, active ? styles.tabLabelActive : null]} numberOfLines={1}>
-                {candidate.label} {candidate.count(lists)}
+                {candidate.label}
+                {candidate.count(lists) >= 0 ? ` ${candidate.count(lists)}` : ""}
               </Text>
             </Pressable>
           );
@@ -245,6 +250,8 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
           })}
         </View>
       ) : null}
+      {tab === "search" ? <SearchPanel defaultProject={defaultProject} onOpen={onOpen} ui={ui} /> : null}
+      {tab === "search" ? null : (
       <View style={styles.card}>
         {empty ? (
           <View style={styles.cardBody}>
@@ -261,6 +268,7 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
           ))
         )}
       </View>
+      )}
     </View>
   );
 }

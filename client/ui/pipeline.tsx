@@ -2,21 +2,22 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { ScrollView, useToast } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import React, { Fragment, useRef } from "react";
+import React, { Fragment, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView as NativeScrollView, Text, View } from "react-native";
 import {
   jobActionRpc,
   jobLogRpc,
   pipelineActionRpc,
   pipelineRpc,
+  runPipelineRpc,
   type Job,
   type LogColor,
   type Pipeline,
   type PipelineRef,
 } from "../../shared/contract";
 import { SendToAgentButton } from "./agent";
-import { Badge, Button, Centered, errorText, IconButton, PipelineDot } from "./common";
-import { formatDuration, humanize, isActive, shortSha, timeAgo } from "./format";
+import { Badge, Button, Centered, ConfirmButton, errorText, IconButton, PipelineDot } from "./common";
+import { formatDuration, formatSize, humanize, isActive, shortSha, timeAgo } from "./format";
 import { jobLogKey, pipelineKey } from "./queries";
 import type { Styles } from "./styles";
 
@@ -109,6 +110,7 @@ export function PipelineView({
   const readPipeline = useRpc(pipelineRpc);
   const runJobAction = useRpc(jobActionRpc);
   const runPipelineAction = useRpc(pipelineActionRpc);
+  const runPipeline = useRpc(runPipelineRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -122,6 +124,11 @@ export function PipelineView({
   const jobAction = useMutation({
     mutationFn: (input: { jobId: string; action: "retry" | "play" | "cancel" }) => runJobAction(input),
     onSuccess: refresh,
+    onError: (error) => toast.error(errorText(error)),
+  });
+  const runAgain = useMutation({
+    mutationFn: (ref: string) => runPipeline({ projectPath: pipelineRef.projectPath, ref }),
+    onSuccess: (next) => onOpenPipeline(next),
     onError: (error) => toast.error(errorText(error)),
   });
   const pipelineAction = useMutation({
@@ -196,6 +203,20 @@ export function PipelineView({
               .filter(Boolean)
               .join(" · ")}
           </Text>
+          {!pipeline.ref.startsWith("refs/merge-requests/") && pipeline.ref ? (
+            <View style={styles.row}>
+              <ConfirmButton
+                label="Run again"
+                title="Run a new pipeline?"
+                message={`GitLab starts a new pipeline for ${refLabel(pipeline.ref)}. It uses runner time like any other run.`}
+                confirmLabel="Run pipeline"
+                busy={runAgain.isPending}
+                onConfirm={() => runAgain.mutate(refLabel(pipeline.ref))}
+                styles={styles}
+                theme={theme}
+              />
+            </View>
+          ) : null}
           {pipeline.retryable || pipeline.cancelable ? (
             <View style={styles.row}>
               {pipeline.retryable ? (
@@ -285,9 +306,10 @@ export function JobLogView({
   const scroll = useRef<NativeScrollView | null>(null);
   // Follows the tail like GitLab does, until the log stops growing.
   const following = useRef(true);
+  const [full, setFull] = useState(false);
   const query = useQuery({
-    queryKey: jobLogKey(projectPath, job.id),
-    queryFn: () => readLog({ projectPath, jobId: job.id }),
+    queryKey: [...jobLogKey(projectPath, job.id), full],
+    queryFn: () => readLog({ projectPath, jobId: job.id, full }),
     refetchInterval: isActive(job.status) ? ACTIVE_REFRESH_MS : false,
   });
 
@@ -328,6 +350,20 @@ export function JobLogView({
           styles={styles}
         />
       </View>
+      {job.artifacts.length > 0 ? (
+        <View style={[styles.row, { flexWrap: "wrap" }]}>
+          <Text style={styles.sectionTitle}>Artifacts</Text>
+          {job.artifacts.map((artifact) => (
+            <Button
+              key={artifact.url}
+              label={`⬇ ${artifact.fileType.toLowerCase()}${artifact.size != null ? ` · ${formatSize(artifact.size)}` : ""}`}
+              onPress={() => void openExternalUrl(artifact.url)}
+              styles={styles}
+              theme={theme}
+            />
+          ))}
+        </View>
+      ) : null}
       {query.isPending ? (
         <Text style={styles.muted}>Loading the log…</Text>
       ) : query.isError ? (
@@ -339,9 +375,14 @@ export function JobLogView({
       ) : (
         <View style={styles.card}>
           {query.data.totalLines > query.data.lines.length ? (
-            <Text style={[styles.small, { padding: 8 }]}>
-              Last {query.data.lines.length} of {query.data.totalLines} lines. The full log is in GitLab.
-            </Text>
+            <View style={[styles.row, { padding: 8 }]}>
+              <Text style={[styles.small, { flex: 1 }]}>
+                Last {query.data.lines.length} of {query.data.totalLines} lines.
+              </Text>
+              {!full ? (
+                <Button label="Load the full log" onPress={() => setFull(true)} styles={styles} theme={theme} />
+              ) : null}
+            </View>
           ) : null}
           <ScrollView
             ref={scroll}

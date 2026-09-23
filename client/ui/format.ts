@@ -104,3 +104,11 @@ export function formatDuration(seconds: number): string {
 export function shortSha(sha: string): string | null {
   return sha ? sha.slice(0, 8) : null;
 }
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const kilobytes = bytes / 1024;
+  return kilobytes < 1024 ? `${Math.round(kilobytes)} KB` : `${(kilobytes / 1024).toFixed(1)} MB`;
+}
