@@ -19,6 +19,12 @@ export function openGitLabSettings(): void {
 export const SETTINGS_ID = "gitlab";
 export const PANEL_ID = "gitlab";
 export const DIFF_PANEL_ID = "gitlab-diff";
+export const REPO_PANEL_ID = "gitlab-repo";
+
+/** The project's files, commits and branches, in the workspace's main area. */
+export function openRepository(workspaceId: string): void {
+  current?.openPanel(REPO_PANEL_ID, { workspaceId, location: "workspace" });
+}
 
 /** Shows an MR's changes in the workspace's main area, next to its agents. */
 export function openDiff(workspaceId: string, target: ItemRef): void {

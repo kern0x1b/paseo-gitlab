@@ -1,8 +1,9 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { startHeaderButtons } from "./client/header-buttons";
-import { DIFF_PANEL_ID, PANEL_ID, SETTINGS_ID, setPluginClient } from "./client/plugin-client";
+import { DIFF_PANEL_ID, PANEL_ID, REPO_PANEL_ID, SETTINGS_ID, setPluginClient } from "./client/plugin-client";
 import { DiffPanel } from "./client/ui/diff-panel";
 import { GitLabPanel } from "./client/ui/panel";
+import { RepositoryPanel } from "./client/ui/repo-panel";
 import { GitLabSettings } from "./client/ui/settings";
 import { attachmentSearchRpc } from "./shared/contract";
 
@@ -28,6 +29,14 @@ export default function contribute(client: PluginClientContext) {
       locations: ["workspace"],
       Component: DiffPanel,
     }),
+    client.addWorkspacePanel({
+      id: REPO_PANEL_ID,
+      title: "Repository",
+      icon: "FolderGit2",
+      context: "workspace",
+      locations: ["workspace"],
+      Component: RepositoryPanel,
+    }),
     client.addSettingsScreen({ id: SETTINGS_ID, title: "GitLab", icon: ICON, Component: GitLabSettings }),
     client.addCommandCenterItem({
       id: "open-gitlab",
@@ -36,6 +45,14 @@ export default function contribute(client: PluginClientContext) {
       keywords: ["gitlab", "merge request", "mr", "issue", "review"],
       context: "workspace",
       onSelect: (context) => context.openPanel(PANEL_ID, { location: "explorer" }),
+    }),
+    client.addCommandCenterItem({
+      id: "open-gitlab-repository",
+      title: "GitLab repository",
+      icon: "FolderGit2",
+      keywords: ["gitlab", "repository", "files", "branches", "commits"],
+      context: "workspace",
+      onSelect: (context) => context.openPanel(REPO_PANEL_ID, { location: "workspace" }),
     }),
     startHeaderButtons(client, ICON),
     client.addAttachmentSource({
