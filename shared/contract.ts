@@ -708,7 +708,14 @@ export const commitsRpc = defineRpc({
 /** What the diff panel shows: an MR's whole change, the change between two commits, or one commit. */
 export const DiffScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("mr"), projectPath: z.string(), iid: z.string() }),
-  z.object({ kind: z.literal("compare"), projectPath: z.string(), from: z.string(), to: z.string() }),
+  z.object({
+    kind: z.literal("compare"),
+    projectPath: z.string(),
+    from: z.string(),
+    to: z.string(),
+    /** Compare from where `to` forked off `from`, as a branch comparison does, not from `from` itself. */
+    mergeBase: z.boolean().optional(),
+  }),
   z.object({ kind: z.literal("commit"), projectPath: z.string(), sha: z.string() }),
 ]);
 
@@ -725,4 +732,60 @@ export const fileLinesRpc = defineRpc({
   input: z.object({ projectPath: z.string(), path: z.string(), ref: z.string() }),
   /** The file split into lines, or null when it is binary or too large to show. */
   output: z.object({ lines: z.array(z.string()).nullable() }),
+});
+
+export const TreeEntrySchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  type: z.enum(["tree", "blob"]),
+});
+
+export type TreeEntry = z.output<typeof TreeEntrySchema>;
+
+export const repoTreeRpc = defineRpc({
+  name: "gitlab.repo.tree",
+  input: z.object({ projectPath: z.string(), ref: z.string(), path: z.string() }),
+  output: z.object({ entries: z.array(TreeEntrySchema), truncated: z.boolean() }),
+});
+
+export const refCommitsRpc = defineRpc({
+  name: "gitlab.repo.commits",
+  input: z.object({ projectPath: z.string(), ref: z.string(), path: z.string().optional(), page: z.number().int().min(1) }),
+  output: z.object({ commits: z.array(CommitSchema), more: z.boolean() }),
+});
+
+export const BranchSchema = z.object({
+  name: z.string(),
+  isDefault: z.boolean(),
+  protected: z.boolean(),
+  merged: z.boolean(),
+  canPush: z.boolean(),
+  webUrl: z.string(),
+  commit: CommitSchema,
+});
+
+export type Branch = z.output<typeof BranchSchema>;
+
+export const branchesRpc = defineRpc({
+  name: "gitlab.repo.branches",
+  input: z.object({ projectPath: z.string(), search: z.string() }),
+  output: z.object({ branches: z.array(BranchSchema), defaultBranch: z.string().nullable() }),
+});
+
+export const aheadBehindRpc = defineRpc({
+  name: "gitlab.repo.ahead-behind",
+  input: z.object({ projectPath: z.string(), branch: z.string(), base: z.string() }),
+  output: z.object({ ahead: z.number(), behind: z.number() }),
+});
+
+export const createBranchRpc = defineRpc({
+  name: "gitlab.repo.branch.create",
+  input: z.object({ projectPath: z.string(), name: z.string().min(1), ref: z.string().min(1) }),
+  output: z.object({ name: z.string() }),
+});
+
+export const deleteBranchRpc = defineRpc({
+  name: "gitlab.repo.branch.delete",
+  input: z.object({ projectPath: z.string(), name: z.string().min(1) }),
+  output: z.object({ ok: z.literal(true) }),
 });

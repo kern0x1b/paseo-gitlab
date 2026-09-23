@@ -13,8 +13,10 @@ import type {
   PipelineRef,
   DraftNote,
   DiffScope,
+  Branch,
   Commit,
   MergeRequestVersion,
+  TreeEntry,
   WorkspaceState,
   SavedQuery,
   SearchQuery,
@@ -89,6 +91,40 @@ import {
 const LOG_TIMEOUT_MS = 30_000;
 /** Past this a file is shown from its diff only; expanding context would freeze the panel. */
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
+/** A folder with more than 1000 entries is shown in part, with a link to GitLab. */
+const MAX_TREE_PAGES = 10;
+const COMMITS_PER_PAGE = 40;
+
+interface RawCommit {
+  id: string;
+  short_id: string;
+  parent_ids?: string[];
+  title: string;
+  author_name: string;
+  created_at: string;
+  web_url: string;
+}
+
+function toCommit(commit: RawCommit): Commit {
+  return {
+    sha: commit.id,
+    shortSha: commit.short_id,
+    parentSha: commit.parent_ids?.[0] ?? null,
+    title: commit.title,
+    author: commit.author_name,
+    createdAt: commit.created_at,
+    webUrl: commit.web_url,
+  };
+}
+
+function projectPath(path: string): string {
+  return `/projects/${encodeURIComponent(path)}`;
+}
+
+/** Folders before files, each alphabetically, as GitLab lists a folder. */
+function sortEntries(entries: TreeEntry[]): TreeEntry[] {
+  return entries.sort((a, b) => (a.type !== b.type ? (a.type === "tree" ? -1 : 1) : a.name.localeCompare(b.name)));
+}
 /** "Show the full log": still bounded, so a runaway job cannot freeze the panel. */
 const FULL_LOG_LINES = 50_000;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -779,28 +815,128 @@ export function createHandlers(deps: AuthDeps) {
 
     async commits(input: { projectPath: string; iid: string }): Promise<{ commits: Commit[] }> {
       const connection = await requireConnection(deps);
-      const raw = await rest<
-        {
-          id: string;
-          short_id: string;
-          parent_ids?: string[];
-          title: string;
-          author_name: string;
-          created_at: string;
-          web_url: string;
-        }[]
-      >(connection, `${mergeRequestPath(input)}/commits?per_page=100`, deps.fetch);
-      return {
-        commits: raw.map((commit) => ({
-          sha: commit.id,
-          shortSha: commit.short_id,
-          parentSha: commit.parent_ids?.[0] ?? null,
-          title: commit.title,
-          author: commit.author_name,
-          createdAt: commit.created_at,
-          webUrl: commit.web_url,
-        })),
+      const raw = await rest<RawCommit[]>(connection, `${mergeRequestPath(input)}/commits?per_page=100`, deps.fetch);
+      return { commits: raw.map(toCommit) };
+    },
+
+    async repoTree(input: {
+      projectPath: string;
+      ref: string;
+      path: string;
+    }): Promise<{ entries: TreeEntry[]; truncated: boolean }> {
+      const connection = await requireConnection(deps);
+      const entries: TreeEntry[] = [];
+      for (let page = 1; page <= MAX_TREE_PAGES; page += 1) {
+        const batch = await rest<{ name: string; path: string; type: string }[]>(
+          connection,
+          `${projectPath(input.projectPath)}/repository/tree?ref=${encodeURIComponent(input.ref)}&path=${encodeURIComponent(input.path)}&per_page=100&page=${page}`,
+          deps.fetch,
+        );
+        for (const entry of batch) {
+          if (entry.type === "tree" || entry.type === "blob") {
+            entries.push({ name: entry.name, path: entry.path, type: entry.type });
+          }
+        }
+        if (batch.length < 100) {
+          return { entries: sortEntries(entries), truncated: false };
+        }
+      }
+      return { entries: sortEntries(entries), truncated: true };
+    },
+
+    async refCommits(input: {
+      projectPath: string;
+      ref: string;
+      path?: string;
+      page: number;
+    }): Promise<{ commits: Commit[]; more: boolean }> {
+      const connection = await requireConnection(deps);
+      const pathFilter = input.path ? `&path=${encodeURIComponent(input.path)}` : "";
+      const raw = await rest<RawCommit[]>(
+        connection,
+        `${projectPath(input.projectPath)}/repository/commits?ref_name=${encodeURIComponent(input.ref)}${pathFilter}&per_page=${COMMITS_PER_PAGE}&page=${input.page}`,
+        deps.fetch,
+      );
+      return { commits: raw.map(toCommit), more: raw.length === COMMITS_PER_PAGE };
+    },
+
+    async branches(input: {
+      projectPath: string;
+      search: string;
+    }): Promise<{ branches: Branch[]; defaultBranch: string | null }> {
+      const connection = await requireConnection(deps);
+      const search = input.search.trim() ? `&search=${encodeURIComponent(input.search.trim())}` : "";
+      const [raw, project] = await Promise.all([
+        rest<
+          {
+            name: string;
+            default: boolean;
+            protected: boolean;
+            merged: boolean;
+            can_push: boolean;
+            web_url: string;
+            commit: RawCommit;
+          }[]
+        >(connection, `${projectPath(input.projectPath)}/repository/branches?per_page=100${search}`, deps.fetch),
+        rest<{ default_branch?: string | null }>(connection, projectPath(input.projectPath), deps.fetch),
+      ]);
+      const branches = raw
+        .map((branch) => ({
+          name: branch.name,
+          isDefault: branch.default,
+          protected: branch.protected,
+          merged: branch.merged,
+          canPush: branch.can_push,
+          webUrl: branch.web_url,
+          commit: toCommit(branch.commit),
+        }))
+        // The default branch first, then the most recently committed to.
+        .sort((a, b) =>
+          a.isDefault !== b.isDefault ? (a.isDefault ? -1 : 1) : b.commit.createdAt.localeCompare(a.commit.createdAt),
+        );
+      return { branches, defaultBranch: project.default_branch ?? null };
+    },
+
+    async aheadBehind(input: {
+      projectPath: string;
+      branch: string;
+      base: string;
+    }): Promise<{ ahead: number; behind: number }> {
+      const connection = await requireConnection(deps);
+      const count = async (from: string, to: string) => {
+        const result = await rest<{ commits: unknown[] }>(
+          connection,
+          `${projectPath(input.projectPath)}/repository/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+          deps.fetch,
+        );
+        return result.commits.length;
       };
+      const [ahead, behind] = await Promise.all([count(input.base, input.branch), count(input.branch, input.base)]);
+      return { ahead, behind };
+    },
+
+    async createBranch(input: { projectPath: string; name: string; ref: string }): Promise<{ name: string }> {
+      const connection = await requireConnection(deps);
+      const created = await restWrite<{ name: string }>(
+        connection,
+        "POST",
+        `${projectPath(input.projectPath)}/repository/branches?branch=${encodeURIComponent(input.name)}&ref=${encodeURIComponent(input.ref)}`,
+        undefined,
+        deps.fetch,
+      );
+      return { name: created?.name ?? input.name };
+    },
+
+    async deleteBranch(input: { projectPath: string; name: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      await restWrite(
+        connection,
+        "DELETE",
+        `${projectPath(input.projectPath)}/repository/branches/${encodeURIComponent(input.name)}`,
+        undefined,
+        deps.fetch,
+      );
+      return { ok: true };
     },
 
     async scopedDiffs(scope: DiffScope): Promise<{ files: DiffFile[]; truncated: boolean }> {
@@ -809,7 +945,7 @@ export function createHandlers(deps: AuthDeps) {
         case "mr":
           return fetchDiffs(connection, scope.projectPath, scope.iid, deps.fetch);
         case "compare":
-          return fetchCompare(connection, scope.projectPath, scope.from, scope.to, deps.fetch);
+          return fetchCompare(connection, scope.projectPath, scope.from, scope.to, deps.fetch, scope.mergeBase);
         case "commit":
           return fetchCommitDiffs(connection, scope.projectPath, scope.sha, deps.fetch);
       }

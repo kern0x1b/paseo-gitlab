@@ -27,7 +27,13 @@ import {
   authDisconnectRpc,
   authStatusRpc,
   clientLogRpc,
+  aheadBehindRpc,
+  branchesRpc,
   commitsRpc,
+  createBranchRpc,
+  deleteBranchRpc,
+  refCommitsRpc,
+  repoTreeRpc,
   fileLinesRpc,
   scopedDiffsRpc,
   versionsRpc,
@@ -76,6 +82,12 @@ export default function contribute(server: PluginServerContext) {
   server.handle(commitsRpc, (input) => handlers.commits(input));
   server.handle(scopedDiffsRpc, (input) => handlers.scopedDiffs(input));
   server.handle(fileLinesRpc, (input) => handlers.fileLines(input));
+  server.handle(repoTreeRpc, (input) => handlers.repoTree(input));
+  server.handle(refCommitsRpc, (input) => handlers.refCommits(input));
+  server.handle(branchesRpc, (input) => handlers.branches(input));
+  server.handle(aheadBehindRpc, (input) => handlers.aheadBehind(input));
+  server.handle(createBranchRpc, (input) => handlers.createBranch(input));
+  server.handle(deleteBranchRpc, (input) => handlers.deleteBranch(input));
   server.handle(addCodeCommentRpc, (input) => handlers.addCodeComment(input));
   server.handle(referenceSearchRpc, (input) => handlers.referenceSearch(input));
   server.handle(markdownPreviewRpc, (input) => handlers.markdownPreview(input));

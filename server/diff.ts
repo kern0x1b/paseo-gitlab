@@ -173,9 +173,10 @@ export async function fetchCompare(
   from: string,
   to: string,
   fetchImpl: Fetch = fetch,
+  mergeBase = false,
 ): Promise<{ files: DiffFile[]; truncated: boolean }> {
   const response = await fetchImpl(
-    `${connection.host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&straight=true`,
+    `${connection.host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&straight=${!mergeBase}`,
     {
       headers: { Authorization: `Bearer ${connection.token}` },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
