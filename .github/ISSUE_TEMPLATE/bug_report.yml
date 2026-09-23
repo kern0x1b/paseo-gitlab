@@ -1,0 +1,72 @@
+name: Bug Report
+description: Report a plugin issue
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here — see [SECURITY.md](../blob/main/SECURITY.md).
+        Never paste a real token, private URL, or internal hostname.
+  - type: input
+    id: paseo-version
+    attributes:
+      label: Paseo Version
+      placeholder: "0.9.1"
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin Version
+      description: From package.json, or the commit you are on.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15.4 / Windows 11 / Ubuntu 24.04"
+  - type: input
+    id: gitlab
+    attributes:
+      label: GitLab
+      description: Edition and version of the GitLab you connected to.
+      placeholder: "GitLab CE 17.4 / gitlab.com"
+  - type: dropdown
+    id: reproducible-in-demo
+    attributes:
+      label: Reproducible in demo mode?
+      description: Connect to https://demo.gitlab.local with any token and try again.
+      options:
+        - "Yes — happens in demo mode too"
+        - "No — only against a real GitLab"
+        - "Did not try"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this?
+      value: |
+        1. Open the GitLab panel
+        2. ...
+        3. ...
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Paste any error from the Paseo logs. For renderer errors, include what the plugin reported via its client log.
+      render: text

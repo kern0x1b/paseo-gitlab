@@ -261,6 +261,10 @@ See [AGENTS.md](AGENTS.md) for the conventions an agent (or a new contributor)
 should follow when changing this repo, and [CONTRIBUTING.md](CONTRIBUTING.md) for
 how to set up, test and open a pull request.
 
+- **Changes**: [CHANGELOG.md](CHANGELOG.md)
+- **Reporting a vulnerability**: [SECURITY.md](SECURITY.md)
+- **Community expectations**: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
 ## License
 
 [MIT](LICENSE).
