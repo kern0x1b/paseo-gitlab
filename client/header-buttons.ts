@@ -1,5 +1,6 @@
 import type { PluginCleanup } from "@getpaseo/plugin";
 import type { PluginButtonRegistration, PluginClientContext } from "@getpaseo/plugin/client";
+import { clientLogRpc } from "../shared/contract";
 import { PANEL_ID } from "./plugin-client";
 
 /**
@@ -14,14 +15,18 @@ export function startHeaderButtons(client: PluginClientContext, icon: string): P
   const buttons = new Map<string, PluginButtonRegistration>();
   let stopped = false;
 
+  const report = (message: string) => void client.rpc(clientLogRpc, { message }).catch(() => {});
+
   function add(workspaceId: string): void {
     if (stopped || buttons.has(workspaceId)) {
       return;
     }
-    buttons.set(
-      workspaceId,
-      client.addHeaderButton({
-        id: `open-gitlab-${workspaceId}`,
+    try {
+      buttons.set(
+        workspaceId,
+        client.addHeaderButton({
+        // Button ids must match /^[a-z][a-z0-9-]*$/; the host keys them by workspace already.
+        id: "open-gitlab",
         workspaceId,
         button: {
           title: "GitLab",
@@ -32,7 +37,10 @@ export function startHeaderButtons(client: PluginClientContext, icon: string): P
           },
         },
       }),
-    );
+      );
+    } catch (error) {
+      report(`header button for ${workspaceId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   function remove(workspaceId: string): void {
@@ -56,8 +64,9 @@ export function startHeaderButtons(client: PluginClientContext, icon: string): P
         add(workspace.id);
       }
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       // The panel is still in the tab launcher and Cmd+K.
+      report(`header buttons: listing workspaces failed: ${error instanceof Error ? error.message : String(error)}`);
     });
 
   return () => {

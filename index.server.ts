@@ -6,6 +6,7 @@ import {
   authConnectRpc,
   authDisconnectRpc,
   authStatusRpc,
+  clientLogRpc,
   detailRpc,
   imageRpc,
   listsRpc,
@@ -24,5 +25,9 @@ export default function contribute(server: PluginServerContext) {
   server.handle(addNoteRpc, (input) => handlers.addNote(input));
   server.handle(resolveRpc, (input) => handlers.resolve(input));
   server.handle(imageRpc, (input) => handlers.image(input));
+  server.handle(clientLogRpc, ({ message }) => {
+    console.error(`[gitlab client] ${message}`);
+    return { ok: true as const };
+  });
   return () => {};
 }

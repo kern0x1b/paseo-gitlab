@@ -167,3 +167,13 @@ export const imageRpc = defineRpc({
   /** Null when GitLab will not hand the file to this token; the client links to it instead. */
   output: z.object({ dataUrl: z.string().nullable() }),
 });
+
+/**
+ * Client code runs in Paseo's renderer, whose console nobody sees. Failures it
+ * cannot show on screen are reported here and land in `paseo plugin logs gitlab`.
+ */
+export const clientLogRpc = defineRpc({
+  name: "client.log",
+  input: z.object({ message: z.string().max(2000) }),
+  output: z.object({ ok: z.literal(true) }),
+});
