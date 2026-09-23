@@ -24,10 +24,13 @@ type SecurityRun = (args: string[], stdin?: string) => Promise<{ code: number; s
 
 function runSecurity(args: string[], stdin?: string): Promise<{ code: number; stdout: string }> {
   return new Promise((done) => {
-    const child = spawn("security", args, { stdio: ["pipe", "pipe", "ignore"] });
+    // stdin is only opened when there is something to write: `find-generic-password`
+    // never reads it and can exit first, and ending a pipe to a gone process raises
+    // EPIPE, which without a listener takes the whole plugin process down.
+    const child = spawn("security", args, { stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "ignore"] });
     let stdout = "";
     const timer = setTimeout(() => child.kill(), SECURITY_TIMEOUT_MS);
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
     child.on("error", () => {
@@ -38,7 +41,12 @@ function runSecurity(args: string[], stdin?: string): Promise<{ code: number; st
       clearTimeout(timer);
       done({ code: code ?? -1, stdout });
     });
-    child.stdin.end(stdin ?? "");
+    if (stdin !== undefined && child.stdin) {
+      child.stdin.on("error", () => {
+        // Reported through the exit code instead.
+      });
+      child.stdin.end(stdin);
+    }
   });
 }
 
