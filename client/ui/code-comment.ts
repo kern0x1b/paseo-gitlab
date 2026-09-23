@@ -42,3 +42,28 @@ export function agentMessage(detail: Detail, selection: CodeSelection, comment: 
     comment,
   ].join("\n");
 }
+
+export interface ReviewComment {
+  newPath: string;
+  lines: DiffLine[];
+  body: string;
+}
+
+/** A whole review for an agent: the MR, an optional summary, then every comment with its code. */
+export function reviewMessage(detail: Detail, comments: ReviewComment[], summary: string): string {
+  const parts = [
+    `Review of ${detail.reference} "${detail.title}"${detail.sourceBranch ? ` on branch ${detail.sourceBranch}` : ""}`,
+    detail.webUrl,
+  ];
+  if (summary.trim()) {
+    parts.push("", summary.trim());
+  }
+  parts.push("", `${comments.length} ${comments.length === 1 ? "comment" : "comments"} on the code:`);
+  comments.forEach((comment, index) => {
+    const code = comment.lines
+      .map((line) => `${line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " "}${line.text}`)
+      .join("\n");
+    parts.push("", `${index + 1}. ${comment.newPath}, ${rangeLabel(comment.lines)}:`, "```diff", code, "```", comment.body);
+  });
+  return parts.join("\n");
+}

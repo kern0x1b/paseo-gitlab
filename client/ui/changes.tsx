@@ -12,11 +12,13 @@ import {
   type Discussion,
   type ItemRef,
 } from "../../shared/contract";
-import type { CommentDestination } from "../diff-target";
-import { Button, Centered, errorText, IconButton } from "./common";
+import type { PendingComment } from "../review-store";
+import { endsAt } from "../review-store";
+import { Avatar, Badge, Button, Centered, errorText, IconButton } from "./common";
 import { ProjectContext } from "./composer-tools";
 import { Composer, Thread, useNoteActions, useWrite, type ComposerAction, type NoteActions, type Ui } from "./detail";
-import { agentMessage, lineNumber, rangeLabel, suggestionFor, type CodeSelection } from "./code-comment";
+import { lineNumber, rangeLabel, suggestionFor, type CodeSelection } from "./code-comment";
+import { highlightLine, languageOf, tokenPalette, type HighlightState, type Token } from "./highlight";
 import { detailKey } from "./queries";
 import { draftsKey, ReviewBar } from "./review";
 
@@ -26,7 +28,7 @@ export function diffsKey(ref: ItemRef) {
   return ["gitlab", "diffs", ref.projectPath, ref.iid] as const;
 }
 
-function fileKey(file: DiffFile): string {
+export function fileKey(file: DiffFile): string {
   return `${file.oldPath}\0${file.newPath}`;
 }
 
@@ -49,15 +51,18 @@ function anchoredAt(discussion: Discussion, line: DiffLine): boolean {
 
 function LineRow({
   line,
+  tokens,
   onPress,
   selected,
   ui,
 }: {
   line: DiffLine;
+  tokens: Token[];
   onPress?: () => void;
   selected: boolean;
   ui: Ui;
 }) {
+  const palette = tokenPalette(ui.theme.colors.surface0);
   const { theme } = ui;
   const tint =
     line.kind === "added"
@@ -119,7 +124,20 @@ function LineRow({
             {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : ""}
           </Text>
           <Text selectable style={{ ...cell, flex: 1, color: theme.colors.foreground, paddingRight: 8 }}>
-            {line.text || " "}
+            {line.text
+              ? tokens.map((token, index) =>
+                  palette[token.kind] ? (
+                    <Text
+                      key={index}
+                      style={{ color: palette[token.kind]!, fontStyle: token.kind === "comment" ? "italic" : "normal" }}
+                    >
+                      {token.text}
+                    </Text>
+                  ) : (
+                    token.text
+                  ),
+                )
+              : " "}
           </Text>
         </>
       )}
@@ -127,20 +145,70 @@ function LineRow({
   );
 }
 
-interface CommentHandlers {
-  /** Sends the comment to the chosen agent; absent in GitLab mode or when no agent is picked. */
-  toAgent?: (selection: CodeSelection, body: string) => Promise<unknown>;
-  toGitLab: (selection: CodeSelection, body: string, asDraft: boolean) => Promise<unknown>;
+export interface CommentHandlers {
+  /** Sidebar: comments go straight to GitLab, at once or into the review kept there. */
+  toGitLab?: (selection: CodeSelection, body: string, asDraft: boolean) => Promise<unknown>;
+  /** Main area: comments pile up locally until the review is submitted, to an agent or to GitLab. */
+  stack?: {
+    add: (selection: CodeSelection, body: string) => void;
+    edit: (id: string, body: string) => void;
+    remove: (id: string) => void;
+  };
 }
 
-function FileDiff({
+/** A comment waiting in your review, shown under the line it ends on, like GitLab's pending notes. */
+function PendingNote({ comment, viewer, onEdit, onRemove, ui }: {
+  comment: PendingComment;
+  viewer: { username: string; name: string } | null;
+  onEdit: (body: string) => void;
+  onRemove: () => void;
+  ui: Ui;
+}) {
+  const { styles, theme } = ui;
+  const [editing, setEditing] = useState(false);
+  return (
+    <View style={{ margin: 8, padding: 10, gap: 6, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.statusWarning, backgroundColor: theme.colors.surface1 }}>
+      <View style={styles.row}>
+        <Avatar person={viewer ? { ...viewer } : null} styles={styles} size={20} />
+        <Text style={styles.noteAuthor}>{viewer?.name ?? "You"}</Text>
+        <Badge label="Pending" styles={styles} color={theme.colors.statusWarning} />
+        <View style={styles.spacer} />
+        {!editing ? (
+          <>
+            <IconButton icon="Pencil" label="Edit the comment" onPress={() => setEditing(true)} theme={theme} styles={styles} />
+            <IconButton icon="Trash2" label="Remove the comment" onPress={onRemove} theme={theme} styles={styles} />
+          </>
+        ) : null}
+      </View>
+      {editing ? (
+        <Composer
+          placeholder="Edit the comment…"
+          sendLabel="Save"
+          initialValue={comment.body}
+          autoFocus
+          onSend={async (body) => {
+            onEdit(body);
+            setEditing(false);
+          }}
+          onCancel={() => setEditing(false)}
+          ui={ui}
+        />
+      ) : (
+        <Text style={styles.text}>{comment.body}</Text>
+      )}
+    </View>
+  );
+}
+
+export function FileDiff({
   file,
   detail,
   expanded,
   onToggle,
   actions,
-  destination,
   handlers,
+  pending = [],
+  viewer = null,
   ui,
 }: {
   file: DiffFile;
@@ -148,8 +216,10 @@ function FileDiff({
   expanded: boolean;
   onToggle: () => void;
   actions: NoteActions;
-  destination: CommentDestination | undefined;
   handlers: CommentHandlers;
+  /** This file's comments waiting in your local review. */
+  pending?: PendingComment[];
+  viewer?: { username: string; name: string; avatarUrl?: string | null } | null;
   ui: Ui;
 }) {
   const { styles, theme } = ui;
@@ -158,8 +228,22 @@ function FileDiff({
   const threads = detail.discussions.filter((discussion) => inFile(discussion, file));
   const placed = new Set<string>();
   const title = file.renamedFile ? `${file.oldPath} → ${file.newPath}` : file.newPath;
-  const toAgent = destination?.kind === "agent";
-  const canComment = toAgent || (detail.canComment && detail.diffRefs != null);
+  const stacking = Boolean(handlers.stack);
+  // Highlighted once per file; a hunk header resets the carried block-comment state.
+  const highlighted = useMemo(() => {
+    const language = languageOf(file.newPath);
+    let state: HighlightState = { inBlock: false };
+    return file.lines.map((line) => {
+      if (line.kind === "hunk") {
+        state = { inBlock: false };
+        return [];
+      }
+      const result = highlightLine(line.text, language, state);
+      state = result.state;
+      return result.tokens;
+    });
+  }, [file]);
+  const canComment = stacking || (detail.canComment && detail.diffRefs != null);
   const low = selection ? Math.min(selection.anchor, selection.focus) : -1;
   const high = selection ? Math.max(selection.anchor, selection.focus) : -1;
   const selectedLines = selection ? file.lines.slice(low, high + 1).filter((line) => line.kind !== "hunk") : [];
@@ -170,15 +254,13 @@ function FileDiff({
   const composerActions = (): { primary: ComposerAction; others: ComposerAction[] } => {
     const current: CodeSelection = { file, lines: selectedLines };
     const done = () => setSelection(null);
-    if (toAgent) {
+    if (handlers.stack) {
+      const stack = handlers.stack;
       return {
         primary: {
-          label: "Send to agent",
+          label: "Add to review",
           onSend: async (body) => {
-            if (!handlers.toAgent) {
-              throw new Error("Pick the agent to send comments to at the top.");
-            }
-            await handlers.toAgent(current, body);
+            stack.add(current, body);
             done();
           },
         },
@@ -186,13 +268,10 @@ function FileDiff({
       };
     }
     const gitlab = (asDraft: boolean) => async (body: string) => {
-      await handlers.toGitLab(current, body, asDraft);
+      await handlers.toGitLab?.(current, body, asDraft);
       done();
     };
-    const draftFirst = destination?.kind === "gitlab" && destination.asDraft;
-    return draftFirst
-      ? { primary: { label: "Add to review", onSend: gitlab(true) }, others: [{ label: "Comment now", onSend: gitlab(false) }] }
-      : { primary: { label: "Comment", onSend: gitlab(false) }, others: [{ label: "Add to review", onSend: gitlab(true) }] };
+    return { primary: { label: "Comment", onSend: gitlab(false) }, others: [{ label: "Add to review", onSend: gitlab(true) }] };
   };
 
   return (
@@ -229,13 +308,15 @@ function FileDiff({
           ) : (
             <View style={{ paddingVertical: 4 }}>
               {file.lines.map((line, index) => {
-                const here = toAgent ? [] : threads.filter((discussion) => anchoredAt(discussion, line));
+                const here = threads.filter((discussion) => anchoredAt(discussion, line));
+                const waiting = pending.filter((comment) => endsAt(comment, line));
                 here.forEach((discussion) => placed.add(discussion.id));
                 const { primary, others } = index === high ? composerActions() : { primary: null, others: [] };
                 return (
                   <Fragment key={index}>
                     <LineRow
                       line={line}
+                      tokens={highlighted[index] ?? []}
                       selected={index >= low && index <= high && line.kind !== "hunk"}
                       onPress={canComment && line.kind !== "hunk" ? () => pick(index) : undefined}
                       ui={ui}
@@ -245,21 +326,32 @@ function FileDiff({
                         <Thread discussion={discussion} actions={actions} ui={ui} />
                       </View>
                     ))}
+                    {handlers.stack
+                      ? waiting.map((comment) => (
+                          <PendingNote
+                            key={comment.id}
+                            comment={comment}
+                            viewer={viewer}
+                            onEdit={(body) => handlers.stack!.edit(comment.id, body)}
+                            onRemove={() => handlers.stack!.remove(comment.id)}
+                            ui={ui}
+                          />
+                        ))
+                      : null}
                     {primary && selectedLines.length > 0 ? (
                       <View style={{ padding: 8, gap: 6 }}>
                         <Text style={styles.small}>
-                          {toAgent ? "To your agent" : "To GitLab"} · {file.newPath}, {rangeLabel(selectedLines)} · click
-                          another line to select a range
+                          Comment on {rangeLabel(selectedLines)} · click another line to select a range
                         </Text>
                         <Composer
                           key={`${low}-${high}`}
-                          placeholder={toAgent ? "What should the agent change here?" : "Comment on this code…"}
+                          placeholder="Write a comment…"
                           sendLabel={primary.label}
                           autoFocus
                           onSend={primary.onSend}
                           others={others}
                           templates={
-                            !toAgent && detail.canPush && selectedLines.some((line) => line.kind !== "removed")
+                            detail.canPush && selectedLines.some((line) => line.kind !== "removed")
                               ? [{ label: "Suggest change", text: suggestionFor(selectedLines) }]
                               : []
                           }
@@ -271,9 +363,7 @@ function FileDiff({
                   </Fragment>
                 );
               })}
-              {toAgent
-                ? null
-                : threads
+              {threads
                     .filter((discussion) => !placed.has(discussion.id))
                     .map((discussion) => (
                       // Anchored to a line outside the shown hunks, or to an older version of the file.
@@ -295,8 +385,6 @@ export function ChangesView({
   focusPath,
   onBack,
   onOpenWide,
-  destination,
-  toAgent,
   header,
   ui,
 }: {
@@ -305,9 +393,6 @@ export function ChangesView({
   onBack?: () => void;
   /** Opens the same changes in the main area; shown only in the sidebar. */
   onOpenWide?: () => void;
-  /** Where line comments go; left out, they go to GitLab with the review as an option. */
-  destination?: CommentDestination;
-  toAgent?: (text: string) => Promise<unknown>;
   /** Replaces the default back-and-title row, for the main-area panel. */
   header?: React.ReactNode;
   ui: Ui;
@@ -368,7 +453,6 @@ export function ChangesView({
   const data = detail.data;
 
   const handlers: CommentHandlers = {
-    toAgent: toAgent ? (selection, body) => toAgent(agentMessage(data, selection, body)) : undefined,
     toGitLab: (selection, body, asDraft) => {
       const diffRefs = data.diffRefs;
       const first = selection.lines[0];
@@ -433,7 +517,7 @@ export function ChangesView({
             />
           </View>
         )}
-        {destination?.kind === "agent" ? null : <ReviewBar detail={data} write={write} ui={ui} />}
+        <ReviewBar detail={data} write={write} ui={ui} />
         <Text style={styles.small}>
           {files.length} files · +{additions} −{deletions} · click a line to comment, then another to select a range
         </Text>
@@ -457,7 +541,6 @@ export function ChangesView({
               })
             }
             actions={actions}
-            destination={destination}
             handlers={handlers}
             ui={ui}
           />
