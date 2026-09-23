@@ -50,10 +50,15 @@ function storedTreeWidth(): number {
   return Number.isFinite(raw) && raw >= TREE_WIDTH.min && raw <= TREE_WIDTH.max ? raw : TREE_WIDTH.initial;
 }
 
-/** A thin handle between the tree and the diff; drag it to make the tree wider or narrower. */
+/**
+ * A thin handle between the tree and the diff; drag it to make the tree wider or narrower.
+ * On the web it listens to pointer events itself and turns text selection off while
+ * dragging: without that the browser selects every row the pointer passes over.
+ */
 function Splitter({ width, onChange, ui }: { width: number; onChange: (width: number) => void; ui: Ui }) {
   const start = useRef(width);
   const [dragging, setDragging] = useState(false);
+  const clamp = (next: number) => Math.min(TREE_WIDTH.max, Math.max(TREE_WIDTH.min, next));
   const responder = useMemo(
     () =>
       PanResponder.create({
@@ -63,21 +68,51 @@ function Splitter({ width, onChange, ui }: { width: number; onChange: (width: nu
           start.current = width;
           setDragging(true);
         },
-        onPanResponderMove: (_event, gesture) =>
-          onChange(Math.min(TREE_WIDTH.max, Math.max(TREE_WIDTH.min, start.current + gesture.dx))),
+        onPanResponderMove: (_event, gesture) => onChange(clamp(start.current + gesture.dx)),
         onPanResponderRelease: () => setDragging(false),
         onPanResponderTerminate: () => setDragging(false),
       }),
     [width, onChange],
   );
+  const onPointerDown = (event: { clientX: number; preventDefault: () => void }) => {
+    event.preventDefault();
+    const originX = event.clientX;
+    const originWidth = width;
+    const body = document.body.style;
+    const previous = { userSelect: body.userSelect, cursor: body.cursor };
+    body.userSelect = "none";
+    body.cursor = "col-resize";
+    globalThis.getSelection?.()?.removeAllRanges();
+    setDragging(true);
+    const move = (next: PointerEvent) => onChange(clamp(originWidth + next.clientX - originX));
+    const stop = () => {
+      body.userSelect = previous.userSelect;
+      body.cursor = previous.cursor;
+      setDragging(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  };
+  const handlers =
+    Platform.OS === "web"
+      ? ({
+          onPointerDown: (event: { nativeEvent: PointerEvent }) => onPointerDown(event.nativeEvent),
+        } as object)
+      : responder.panHandlers;
   return (
     <View
-      {...responder.panHandlers}
+      {...handlers}
       accessibilityRole="adjustable"
       accessibilityLabel="Resize the file tree"
       style={[
         { width: 6, marginLeft: -3, marginRight: -3, zIndex: 2 },
-        Platform.OS === "web" ? ({ cursor: "col-resize" } as object) : null,
+        Platform.OS === "web"
+          ? ({ cursor: "col-resize", touchAction: "none", userSelect: "none" } as object)
+          : null,
       ]}
     >
       <View
