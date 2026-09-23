@@ -301,3 +301,18 @@ describe("parseJobLog", () => {
     );
   });
 });
+
+describe("role filters", () => {
+  const item = (reference: string, roles: ("author" | "assignee")[]) =>
+    ({ reference, roles }) as unknown as import("../shared/contract").ListItem;
+
+  it("keeps only the chosen role, and defaults to assigned unless that would be empty", async () => {
+    const { byRole, defaultRoleFilter } = await import("../client/ui/filters");
+    const items = [item("a", ["author"]), item("b", ["author", "assignee"]), item("c", ["assignee"])];
+    assert.deepEqual(byRole(items, "assignee").map((entry) => entry.reference), ["b", "c"]);
+    assert.deepEqual(byRole(items, "author").map((entry) => entry.reference), ["a", "b"]);
+    assert.equal(byRole(items, "all").length, 3);
+    assert.equal(defaultRoleFilter(items), "assignee");
+    assert.equal(defaultRoleFilter([item("a", ["author"])]), "all");
+  });
+});
