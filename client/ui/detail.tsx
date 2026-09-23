@@ -25,7 +25,7 @@ import {
 } from "../../shared/contract";
 import { HtmlBody } from "../html/html-body";
 import { htmlToText } from "../html/sanitize";
-import { Avatar, Badge, Button, Centered, errorText, IconButton, Labels, PipelineDot } from "./common";
+import { Avatar, Badge, Button, Centered, ConfirmButton, errorText, IconButton, Labels, PipelineDot } from "./common";
 import { humanize, mergeStatusLabel, timeAgo } from "./format";
 import { SendToAgentButton } from "./agent";
 import { LabelPicker, PeoplePicker } from "./picker";
@@ -266,10 +266,13 @@ export function NoteView({ note, actions, ui }: { note: Note; actions: NoteActio
 function ApplySuggestion({ label, onApply, ui }: { label: string; onApply: () => Promise<unknown>; ui: Ui }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Button
+    <ConfirmButton
       label={label}
+      title="Apply this suggestion?"
+      message="GitLab commits the suggested change to the source branch in your name."
+      confirmLabel="Apply and commit"
       busy={busy}
-      onPress={() => {
+      onConfirm={() => {
         setBusy(true);
         void onApply()
           .catch(() => {})
@@ -795,10 +798,17 @@ export function ItemDetail({
                 />
               ) : null}
               {stateAction ? (
-                <Button
+                <ConfirmButton
                   label={stateAction === "close" ? (isMr ? "Close merge request" : "Close issue") : "Reopen"}
+                  title={stateAction === "close" ? `Close ${detail.reference}?` : `Reopen ${detail.reference}?`}
+                  message={
+                    stateAction === "close"
+                      ? `"${detail.title}" is closed. It can be reopened later.`
+                      : `"${detail.title}" is opened again.`
+                  }
+                  confirmLabel={stateAction === "close" ? "Close" : "Reopen"}
                   busy={changingState === "state"}
-                  onPress={() => changeState("state", { state: stateAction })}
+                  onConfirm={() => changeState("state", { state: stateAction })}
                   styles={ui.styles}
                   theme={ui.theme}
                 />

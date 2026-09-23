@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
 import React from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Label, Person } from "../../shared/contract";
@@ -135,4 +135,66 @@ export function Centered({ children, styles }: { children: React.ReactNode; styl
 
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A button that asks first. For anything that is hard to take back or that other
+ * people see at once: merging, approving, closing.
+ */
+export function ConfirmButton({
+  label,
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  styles,
+  theme,
+  primary,
+  busy,
+  disabled,
+}: {
+  label: string;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  styles: Styles;
+  theme: PluginTheme;
+  primary?: boolean;
+  busy?: boolean;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <Button
+        label={label}
+        primary={primary}
+        busy={busy}
+        disabled={disabled}
+        onPress={() => setOpen(true)}
+        styles={styles}
+        theme={theme}
+      />
+      <Modal title={title} open={open} onOpenChange={setOpen}>
+        <Modal.Content>
+          <Text style={styles.text}>{message}</Text>
+          <View style={styles.row}>
+            <View style={styles.spacer} />
+            <Button label="Cancel" onPress={() => setOpen(false)} styles={styles} theme={theme} />
+            <Button
+              label={confirmLabel}
+              primary
+              onPress={() => {
+                setOpen(false);
+                onConfirm();
+              }}
+              styles={styles}
+              theme={theme}
+            />
+          </View>
+        </Modal.Content>
+      </Modal>
+    </>
+  );
 }

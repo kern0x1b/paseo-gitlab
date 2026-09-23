@@ -11,7 +11,7 @@ import {
   type Detail,
   type Reaction,
 } from "../../shared/contract";
-import { Badge, Button } from "./common";
+import { Badge, Button, ConfirmButton } from "./common";
 import type { Styles } from "./styles";
 
 type Ui = { theme: PluginTheme; styles: Styles };
@@ -120,23 +120,42 @@ export function MergePanel({ detail, write, ui }: { detail: Detail; write: Write
         </View>
         <View style={[styles.row, { flexWrap: "wrap" }]}>
           {detail.canApprove || approvedByMe ? (
-            <Button
+            <ConfirmButton
               label={approvedByMe ? "Revoke approval" : "Approve"}
+              title={approvedByMe ? "Revoke your approval?" : "Approve this merge request?"}
+              message={
+                approvedByMe
+                  ? `Your approval of ${detail.reference} is withdrawn, and the author is notified.`
+                  : `You approve ${detail.reference} "${detail.title}". The author and reviewers see it at once.`
+              }
+              confirmLabel={approvedByMe ? "Revoke approval" : "Approve"}
               primary={!approvedByMe}
               busy={busy === "approve" || busy === "unapprove"}
-              onPress={() => act(approvedByMe ? "unapprove" : "approve")}
+              onConfirm={() => act(approvedByMe ? "unapprove" : "approve")}
               styles={styles}
               theme={theme}
             />
           ) : null}
           {detail.canMerge && detail.mergeable ? (
-            <Button label="Merge" busy={busy === "merge"} onPress={() => act("merge")} styles={styles} theme={theme} />
+            <ConfirmButton
+              label="Merge"
+              title="Merge this merge request?"
+              message={`${detail.sourceBranch ?? "The source branch"} is merged into ${detail.targetBranch ?? "the target branch"} now. This cannot be undone from here.`}
+              confirmLabel="Merge"
+              busy={busy === "merge"}
+              onConfirm={() => act("merge")}
+              styles={styles}
+              theme={theme}
+            />
           ) : null}
           {canAutoMerge && (pipelineRunning || !detail.mergeable) ? (
-            <Button
+            <ConfirmButton
               label="Merge when checks pass"
+              title="Merge when checks pass?"
+              message={`GitLab merges ${detail.sourceBranch ?? "the source branch"} into ${detail.targetBranch ?? "the target branch"} by itself as soon as the pipeline and the other checks pass.`}
+              confirmLabel="Set auto-merge"
               busy={busy === "auto_merge"}
-              onPress={() => act("auto_merge")}
+              onConfirm={() => act("auto_merge")}
               styles={styles}
               theme={theme}
             />
@@ -151,11 +170,14 @@ export function MergePanel({ detail, write, ui }: { detail: Detail; write: Write
             />
           ) : null}
           {detail.shouldBeRebased && detail.canPush ? (
-            <Button
+            <ConfirmButton
               label={detail.rebaseInProgress ? "Rebasing…" : "Rebase"}
+              title="Rebase the source branch?"
+              message={`GitLab rebases ${detail.sourceBranch ?? "the source branch"} onto ${detail.targetBranch ?? "the target branch"} and force-pushes it. Anyone with the branch checked out has to pull again.`}
+              confirmLabel="Rebase"
               busy={busy === "rebase"}
               disabled={detail.rebaseInProgress}
-              onPress={() => act("rebase")}
+              onConfirm={() => act("rebase")}
               styles={styles}
               theme={theme}
             />
@@ -231,19 +253,25 @@ export function ReviewBar({ detail, write, ui }: { detail: Detail; write: Write;
         ))}
         <View style={[styles.row, { flexWrap: "wrap" }]}>
           <View style={styles.spacer} />
-          <Button
+          <ConfirmButton
             label="Submit review"
+            title="Submit your review?"
+            message={`${list.length} pending ${list.length === 1 ? "comment is" : "comments are"} published to ${detail.reference}, and everyone on it gets one notification.`}
+            confirmLabel="Submit review"
             busy={busy === "submit"}
-            onPress={() => run("submit", () => submitReview({ ...ref, approve: false }))}
+            onConfirm={() => run("submit", () => submitReview({ ...ref, approve: false }))}
             styles={styles}
             theme={theme}
           />
           {detail.canApprove && !detail.approvedBy.includes(detail.viewer) ? (
-            <Button
+            <ConfirmButton
               label="Submit and approve"
+              title="Submit your review and approve?"
+              message={`${list.length} pending ${list.length === 1 ? "comment is" : "comments are"} published and you approve ${detail.reference}.`}
+              confirmLabel="Submit and approve"
               primary
               busy={busy === "approve"}
-              onPress={() => run("approve", () => submitReview({ ...ref, approve: true }))}
+              onConfirm={() => run("approve", () => submitReview({ ...ref, approve: true }))}
               styles={styles}
               theme={theme}
             />
