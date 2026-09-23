@@ -1,6 +1,7 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { connect, defaultAuthDeps, disconnect } from "./server/auth";
 import { createHandlers } from "./server/handlers";
+import { withDemo } from "./server/demo";
 import { readAccounts, withAccount } from "./server/state";
 import { hostForDirectory } from "./server/workspace";
 import {
@@ -63,7 +64,7 @@ import {
 
 /** Server entry: the token and every GitLab request stay on this side. */
 export default function contribute(server: PluginServerContext) {
-  const deps = defaultAuthDeps();
+  const deps = withDemo(defaultAuthDeps());
   const handlers = createHandlers(deps);
   // Runs each request as the account it names, and hands the handler its input without that field.
   const handle: PluginServerContext["handle"] = (contract, handler) =>
