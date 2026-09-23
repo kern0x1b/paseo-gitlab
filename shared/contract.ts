@@ -345,6 +345,12 @@ export const DiffLineSchema = z.object({
   kind: z.enum(["hunk", "context", "added", "removed"]),
   oldLine: z.number().nullable(),
   newLine: z.number().nullable(),
+  /**
+   * Where the line sits on both sides even when it exists on only one: GitLab's
+   * `line_code` for multi-line comments is built from these two counters.
+   */
+  oldPos: z.number(),
+  newPos: z.number(),
   text: z.string(),
 });
 
@@ -623,4 +629,23 @@ export const runPipelineRpc = defineRpc({
   name: "gitlab.pipeline.run",
   input: z.object({ projectPath: z.string(), ref: z.string(), mergeRequestIid: z.string().optional() }),
   output: PipelineRefSchema,
+});
+
+const CodeLineSchema = DiffLineSchema.pick({ kind: true, oldLine: true, newLine: true, oldPos: true, newPos: true });
+
+/** A comment on one line or a range of lines of an MR's diff, published or saved to the review. */
+export const addCodeCommentRpc = defineRpc({
+  name: "gitlab.note.code",
+  input: z.object({
+    projectPath: z.string(),
+    iid: z.string(),
+    body: z.string().min(1),
+    diffRefs: DiffRefsSchema,
+    oldPath: z.string(),
+    newPath: z.string(),
+    start: CodeLineSchema,
+    end: CodeLineSchema,
+    asDraft: z.boolean(),
+  }),
+  output: z.object({ ok: z.literal(true) }),
 });

@@ -3,6 +3,7 @@ import type {
   Detail,
   DetailLabel,
   DiffFile,
+  DiffLine,
   DiffRefs,
   ItemRef,
   JobLog,
@@ -20,7 +21,7 @@ import { randomUUID } from "node:crypto";
 import { readSavedQueries, writeSavedQueries } from "./state";
 import { authStatus, requireConnection, type AuthDeps } from "./auth";
 import { assertNoMutationErrors, graphql, GitLabError, rest, restWrite, type Connection } from "./gitlab";
-import { fetchDiffs } from "./diff";
+import { codePosition, fetchDiffs } from "./diff";
 import { fetchImage } from "./images";
 import { MAX_LOG_LINES, parseJobLog } from "./log";
 import { agentPrompt, failedJobsOf, itemContext, jobPrompt, logTail, type FailedJobLog } from "./agent-context";
@@ -621,6 +622,29 @@ export function createHandlers(deps: AuthDeps) {
         throw new Error("GitLab did not return the new pipeline.");
       }
       return { projectPath: input.projectPath, iid };
+    },
+
+    async addCodeComment(input: {
+      projectPath: string;
+      iid: string;
+      body: string;
+      diffRefs: DiffRefs;
+      oldPath: string;
+      newPath: string;
+      start: Pick<DiffLine, "kind" | "oldLine" | "newLine" | "oldPos" | "newPos">;
+      end: Pick<DiffLine, "kind" | "oldLine" | "newLine" | "oldPos" | "newPos">;
+      asDraft: boolean;
+    }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      const position = codePosition(input);
+      await restWrite(
+        connection,
+        "POST",
+        `${mergeRequestPath(input)}/${input.asDraft ? "draft_notes" : "discussions"}`,
+        input.asDraft ? { note: input.body, position } : { body: input.body, position },
+        deps.fetch,
+      );
+      return { ok: true };
     },
 
     async workspace(input: { directory: string }): Promise<WorkspaceState> {

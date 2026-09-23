@@ -4,7 +4,8 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { workspaceRpc, type ItemRef } from "../../shared/contract";
 import { SendToAgentButton } from "./agent";
-import { Badge, Button, PipelineDot } from "./common";
+import { openDiff } from "../plugin-client";
+import { Badge, Button, IconButton, PipelineDot } from "./common";
 import type { Ui } from "./detail";
 import { humanize, mergeStatusLabel, shortReference } from "./format";
 
@@ -48,6 +49,17 @@ export function WorkspaceCard({
           <Text style={[styles.small, { flex: 1 }]} numberOfLines={1}>
             {checkout.branch}
           </Text>
+          {mergeRequest ? (
+            <IconButton
+              icon="FileDiff"
+              label="Open the diff in the main area"
+              onPress={() =>
+                openDiff(ui.workspaceId, { kind: "mr", projectPath: mergeRequest.projectPath, iid: mergeRequest.iid })
+              }
+              theme={theme}
+              styles={styles}
+            />
+          ) : null}
           {mergeRequest ? (
             <SendToAgentButton
               workspaceId={ui.workspaceId}

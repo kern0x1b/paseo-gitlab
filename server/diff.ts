@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { DiffFile, DiffLine } from "../shared/contract";
 import type { Connection, Fetch } from "./gitlab";
 import { GitLabError } from "./gitlab";
@@ -35,13 +36,17 @@ export function parseUnifiedDiff(diff: string): DiffLine[] {
     if (hunk) {
       oldLine = Number(hunk[1]);
       newLine = Number(hunk[2]);
-      lines.push({ kind: "hunk", oldLine: null, newLine: null, text });
+      lines.push({ kind: "hunk", oldLine: null, newLine: null, oldPos: oldLine, newPos: newLine, text });
     } else if (text.startsWith("+")) {
-      lines.push({ kind: "added", oldLine: null, newLine: newLine++, text: text.slice(1) });
+      lines.push({ kind: "added", oldLine: null, newLine, oldPos: oldLine, newPos: newLine, text: text.slice(1) });
+      newLine += 1;
     } else if (text.startsWith("-")) {
-      lines.push({ kind: "removed", oldLine: oldLine++, newLine: null, text: text.slice(1) });
+      lines.push({ kind: "removed", oldLine, newLine: null, oldPos: oldLine, newPos: newLine, text: text.slice(1) });
+      oldLine += 1;
     } else if (text.startsWith(" ")) {
-      lines.push({ kind: "context", oldLine: oldLine++, newLine: newLine++, text: text.slice(1) });
+      lines.push({ kind: "context", oldLine, newLine, oldPos: oldLine, newPos: newLine, text: text.slice(1) });
+      oldLine += 1;
+      newLine += 1;
     }
     // `\ No newline at end of file` and the trailing empty split carry nothing to show.
   }
@@ -89,4 +94,50 @@ export async function fetchDiffs(
     }
   }
   return { files, truncated: true };
+}
+
+type CodeLine = Pick<DiffLine, "kind" | "oldLine" | "newLine" | "oldPos" | "newPos">;
+
+/** GitLab's `line_code`: sha1 of the file path, then the line's old and new positions. */
+export function lineCode(path: string, line: CodeLine): string {
+  return `${createHash("sha1").update(path).digest("hex")}_${line.oldPos}_${line.newPos}`;
+}
+
+function rangeEnd(path: string, line: CodeLine) {
+  return {
+    line_code: lineCode(path, line),
+    // GitLab's own frontend sends "new" for added lines and "old" for everything else.
+    type: line.kind === "added" ? "new" : "old",
+    old_line: line.oldLine,
+    new_line: line.newLine,
+  };
+}
+
+/**
+ * The REST position of a code comment. A single line is anchored by its numbers;
+ * a range adds `line_range`, which is what makes GitLab show "Lines 12 to 18".
+ */
+export function codePosition(input: {
+  diffRefs: { baseSha: string; headSha: string; startSha: string };
+  oldPath: string;
+  newPath: string;
+  start: CodeLine;
+  end: CodeLine;
+}): Record<string, unknown> {
+  const anchor = input.end;
+  const position: Record<string, unknown> = {
+    position_type: "text",
+    base_sha: input.diffRefs.baseSha,
+    head_sha: input.diffRefs.headSha,
+    start_sha: input.diffRefs.startSha,
+    old_path: input.oldPath,
+    new_path: input.newPath,
+    old_line: anchor.kind === "added" ? null : anchor.oldLine,
+    new_line: anchor.kind === "removed" ? null : anchor.newLine,
+  };
+  const same = input.start.oldPos === input.end.oldPos && input.start.newPos === input.end.newPos;
+  if (!same) {
+    position.line_range = { start: rangeEnd(input.newPath, input.start), end: rangeEnd(input.newPath, input.end) };
+  }
+  return position;
 }

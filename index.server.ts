@@ -2,6 +2,7 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { connect, defaultAuthDeps, disconnect } from "./server/auth";
 import { createHandlers } from "./server/handlers";
 import {
+  addCodeCommentRpc,
   addDiffNoteRpc,
   agentPromptRpc,
   attachmentSearchRpc,
@@ -67,6 +68,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(diffsRpc, (input) => handlers.diffs(input));
   server.handle(addDiffNoteRpc, (input) => handlers.addDiffNote(input));
   server.handle(workspaceRpc, (input) => handlers.workspace(input));
+  server.handle(addCodeCommentRpc, (input) => handlers.addCodeComment(input));
   server.handle(referenceSearchRpc, (input) => handlers.referenceSearch(input));
   server.handle(markdownPreviewRpc, (input) => handlers.markdownPreview(input));
   server.handle(uploadRpc, (input) => handlers.upload(input));

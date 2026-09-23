@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { Text, View } from "react-native";
 import { authStatusRpc, listsRpc, type ItemRef, type Job, type PipelineRef } from "../../shared/contract";
-import { openGitLabSettings } from "../plugin-client";
+import { openDiff, openGitLabSettings } from "../plugin-client";
 import { Button, Centered, errorText, HostContext, IconButton } from "./common";
 import { ChangesView } from "./changes";
 import { CreateView, type CreateTarget } from "./create";
@@ -96,6 +96,7 @@ export function GitLabPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
         itemRef={top.ref}
         focusPath={top.focusPath}
         onBack={back}
+        onOpenWide={() => openDiff(workspaceId, top.ref)}
         ui={{ theme, styles, host: status.data.host, workspaceId }}
       />
     );

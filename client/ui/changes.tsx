@@ -3,8 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useMemo, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import {
-  addDiffNoteRpc,
-  addDraftRpc,
+  addCodeCommentRpc,
   detailRpc,
   diffsRpc,
   type Detail,
@@ -13,15 +12,17 @@ import {
   type Discussion,
   type ItemRef,
 } from "../../shared/contract";
+import type { CommentDestination } from "../diff-target";
 import { Button, Centered, errorText, IconButton } from "./common";
-import { Composer, Thread, useNoteActions, useWrite, type NoteActions, type Ui } from "./detail";
+import { ProjectContext } from "./composer-tools";
+import { Composer, Thread, useNoteActions, useWrite, type ComposerAction, type NoteActions, type Ui } from "./detail";
+import { agentMessage, lineNumber, rangeLabel, suggestionFor, type CodeSelection } from "./code-comment";
 import { detailKey } from "./queries";
 import { draftsKey, ReviewBar } from "./review";
-import { ProjectContext } from "./composer-tools";
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
 
-function diffsKey(ref: ItemRef) {
+export function diffsKey(ref: ItemRef) {
   return ["gitlab", "diffs", ref.projectPath, ref.iid] as const;
 }
 
@@ -66,24 +67,15 @@ function LineRow({
         : line.kind === "hunk"
           ? theme.colors.surface2
           : null;
-  const number = {
-    width: 38,
-    fontFamily: MONO,
-    fontSize: 11,
-    lineHeight: 17,
-    color: theme.colors.foregroundMuted,
-    textAlign: "right" as const,
-  };
+  const cell = { fontFamily: MONO, fontSize: 11, lineHeight: 17 };
+  const number = { ...cell, width: 38, color: theme.colors.foregroundMuted, textAlign: "right" as const };
   return (
     <Pressable
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? `Comment on line ${line.newLine ?? line.oldLine}` : undefined}
+      accessibilityLabel={onPress ? `Select line ${lineNumber(line)}` : undefined}
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed }) => [
-        { flexDirection: "row", position: "relative" },
-        pressed || selected ? { backgroundColor: theme.colors.surface2 } : null,
-      ]}
+      style={({ pressed }) => [{ flexDirection: "row", position: "relative" }, pressed ? { opacity: 0.8 } : null]}
     >
       {tint ? (
         <View
@@ -99,47 +91,34 @@ function LineRow({
           }}
         />
       ) : null}
-      {line.kind === "hunk" ? (
-        <Text
+      {selected ? (
+        <View
+          pointerEvents="none"
           style={{
-            flex: 1,
-            fontFamily: MONO,
-            fontSize: 11,
-            lineHeight: 17,
-            paddingHorizontal: 8,
-            color: theme.colors.foregroundMuted,
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: theme.colors.accent,
+            opacity: 0.22,
+            borderLeftWidth: 3,
+            borderLeftColor: theme.colors.accent,
           }}
-          numberOfLines={1}
-        >
+        />
+      ) : null}
+      {line.kind === "hunk" ? (
+        <Text style={{ ...cell, flex: 1, paddingHorizontal: 8, color: theme.colors.foregroundMuted }} numberOfLines={1}>
           {line.text}
         </Text>
       ) : (
         <>
           <Text style={number}>{line.oldLine ?? ""}</Text>
           <Text style={number}>{line.newLine ?? ""}</Text>
-          <Text
-            style={{
-              width: 16,
-              textAlign: "center",
-              fontFamily: MONO,
-              fontSize: 11,
-              lineHeight: 17,
-              color: theme.colors.foregroundMuted,
-            }}
-          >
+          <Text style={{ ...cell, width: 16, textAlign: "center", color: theme.colors.foregroundMuted }}>
             {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : ""}
           </Text>
-          <Text
-            selectable
-            style={{
-              flex: 1,
-              fontFamily: MONO,
-              fontSize: 11,
-              lineHeight: 17,
-              color: theme.colors.foreground,
-              paddingRight: 8,
-            }}
-          >
+          <Text selectable style={{ ...cell, flex: 1, color: theme.colors.foreground, paddingRight: 8 }}>
             {line.text || " "}
           </Text>
         </>
@@ -148,13 +127,20 @@ function LineRow({
   );
 }
 
+interface CommentHandlers {
+  /** Sends the comment to the chosen agent; absent in GitLab mode or when no agent is picked. */
+  toAgent?: (selection: CodeSelection, body: string) => Promise<unknown>;
+  toGitLab: (selection: CodeSelection, body: string, asDraft: boolean) => Promise<unknown>;
+}
+
 function FileDiff({
   file,
   detail,
   expanded,
   onToggle,
   actions,
-  onComment,
+  destination,
+  handlers,
   ui,
 }: {
   file: DiffFile;
@@ -162,15 +148,52 @@ function FileDiff({
   expanded: boolean;
   onToggle: () => void;
   actions: NoteActions;
-  onComment: (file: DiffFile, line: DiffLine, body: string, asDraft: boolean) => Promise<unknown>;
+  destination: CommentDestination | undefined;
+  handlers: CommentHandlers;
   ui: Ui;
 }) {
   const { styles, theme } = ui;
-  const [commentingAt, setCommentingAt] = useState<number | null>(null);
+  // Indexes into file.lines; the first click anchors, the next one in the same file stretches it.
+  const [selection, setSelection] = useState<{ anchor: number; focus: number } | null>(null);
   const threads = detail.discussions.filter((discussion) => inFile(discussion, file));
   const placed = new Set<string>();
   const title = file.renamedFile ? `${file.oldPath} → ${file.newPath}` : file.newPath;
-  const canComment = detail.canComment && detail.diffRefs != null;
+  const toAgent = destination?.kind === "agent";
+  const canComment = toAgent || (detail.canComment && detail.diffRefs != null);
+  const low = selection ? Math.min(selection.anchor, selection.focus) : -1;
+  const high = selection ? Math.max(selection.anchor, selection.focus) : -1;
+  const selectedLines = selection ? file.lines.slice(low, high + 1).filter((line) => line.kind !== "hunk") : [];
+
+  const pick = (index: number) =>
+    setSelection((current) => (current && current.anchor !== index ? { anchor: current.anchor, focus: index } : { anchor: index, focus: index }));
+
+  const composerActions = (): { primary: ComposerAction; others: ComposerAction[] } => {
+    const current: CodeSelection = { file, lines: selectedLines };
+    const done = () => setSelection(null);
+    if (toAgent) {
+      return {
+        primary: {
+          label: "Send to agent",
+          onSend: async (body) => {
+            if (!handlers.toAgent) {
+              throw new Error("Pick the agent to send comments to at the top.");
+            }
+            await handlers.toAgent(current, body);
+            done();
+          },
+        },
+        others: [],
+      };
+    }
+    const gitlab = (asDraft: boolean) => async (body: string) => {
+      await handlers.toGitLab(current, body, asDraft);
+      done();
+    };
+    const draftFirst = destination?.kind === "gitlab" && destination.asDraft;
+    return draftFirst
+      ? { primary: { label: "Add to review", onSend: gitlab(true) }, others: [{ label: "Comment now", onSend: gitlab(false) }] }
+      : { primary: { label: "Comment", onSend: gitlab(false) }, others: [{ label: "Add to review", onSend: gitlab(true) }] };
+  };
 
   return (
     <View style={styles.card}>
@@ -185,9 +208,7 @@ function FileDiff({
           {title}
         </Text>
         {file.newFile ? <Text style={[styles.small, { color: theme.colors.statusSuccess }]}>new</Text> : null}
-        {file.deletedFile ? (
-          <Text style={[styles.small, { color: theme.colors.statusDanger }]}>deleted</Text>
-        ) : null}
+        {file.deletedFile ? <Text style={[styles.small, { color: theme.colors.statusDanger }]}>deleted</Text> : null}
         {threads.length > 0 ? <Text style={styles.small}>💬 {threads.length}</Text> : null}
         <Text style={[styles.small, { color: theme.colors.statusSuccess }]}>+{file.additions}</Text>
         <Text style={[styles.small, { color: theme.colors.statusDanger }]}>−{file.deletions}</Text>
@@ -208,14 +229,15 @@ function FileDiff({
           ) : (
             <View style={{ paddingVertical: 4 }}>
               {file.lines.map((line, index) => {
-                const here = threads.filter((discussion) => anchoredAt(discussion, line));
+                const here = toAgent ? [] : threads.filter((discussion) => anchoredAt(discussion, line));
                 here.forEach((discussion) => placed.add(discussion.id));
+                const { primary, others } = index === high ? composerActions() : { primary: null, others: [] };
                 return (
                   <Fragment key={index}>
                     <LineRow
                       line={line}
-                      selected={commentingAt === index}
-                      onPress={canComment && line.kind !== "hunk" ? () => setCommentingAt(index) : undefined}
+                      selected={index >= low && index <= high && line.kind !== "hunk"}
+                      onPress={canComment && line.kind !== "hunk" ? () => pick(index) : undefined}
                       ui={ui}
                     />
                     {here.map((discussion) => (
@@ -223,31 +245,25 @@ function FileDiff({
                         <Thread discussion={discussion} actions={actions} ui={ui} />
                       </View>
                     ))}
-                    {commentingAt === index ? (
-                      <View style={{ padding: 8 }}>
+                    {primary && selectedLines.length > 0 ? (
+                      <View style={{ padding: 8, gap: 6 }}>
+                        <Text style={styles.small}>
+                          {toAgent ? "To your agent" : "To GitLab"} · {file.newPath}, {rangeLabel(selectedLines)} · click
+                          another line to select a range
+                        </Text>
                         <Composer
-                          placeholder={`Comment on line ${line.newLine ?? line.oldLine}…`}
-                          sendLabel="Add comment"
+                          key={`${low}-${high}`}
+                          placeholder={toAgent ? "What should the agent change here?" : "Comment on this code…"}
+                          sendLabel={primary.label}
                           autoFocus
-                          onSend={async (body) => {
-                            await onComment(file, line, body, false);
-                            setCommentingAt(null);
-                          }}
-                          others={[
-                            {
-                              label: "Add to review",
-                              onSend: async (body) => {
-                                await onComment(file, line, body, true);
-                                setCommentingAt(null);
-                              },
-                            },
-                          ]}
+                          onSend={primary.onSend}
+                          others={others}
                           templates={
-                            line.kind !== "removed" && detail.canPush
-                              ? [{ label: "Suggest change", text: `\`\`\`suggestion:-0+0\n${line.text}\n\`\`\`` }]
+                            !toAgent && detail.canPush && selectedLines.some((line) => line.kind !== "removed")
+                              ? [{ label: "Suggest change", text: suggestionFor(selectedLines) }]
                               : []
                           }
-                          onCancel={() => setCommentingAt(null)}
+                          onCancel={() => setSelection(null)}
                           ui={ui}
                         />
                       </View>
@@ -255,15 +271,17 @@ function FileDiff({
                   </Fragment>
                 );
               })}
-              {threads
-                .filter((discussion) => !placed.has(discussion.id))
-                .map((discussion) => (
-                  // Anchored to a line outside the shown hunks, or to an older version of the file.
-                  <View key={discussion.id} style={{ padding: 8, gap: 4 }}>
-                    <Text style={styles.small}>On a line not in this diff</Text>
-                    <Thread discussion={discussion} actions={actions} ui={ui} />
-                  </View>
-                ))}
+              {toAgent
+                ? null
+                : threads
+                    .filter((discussion) => !placed.has(discussion.id))
+                    .map((discussion) => (
+                      // Anchored to a line outside the shown hunks, or to an older version of the file.
+                      <View key={discussion.id} style={{ padding: 8, gap: 4 }}>
+                        <Text style={styles.small}>On a line not in this diff</Text>
+                        <Thread discussion={discussion} actions={actions} ui={ui} />
+                      </View>
+                    ))}
             </View>
           )}
         </>
@@ -276,18 +294,28 @@ export function ChangesView({
   itemRef,
   focusPath,
   onBack,
+  onOpenWide,
+  destination,
+  toAgent,
+  header,
   ui,
 }: {
   itemRef: ItemRef;
   focusPath?: string;
-  onBack: () => void;
+  onBack?: () => void;
+  /** Opens the same changes in the main area; shown only in the sidebar. */
+  onOpenWide?: () => void;
+  /** Where line comments go; left out, they go to GitLab with the review as an option. */
+  destination?: CommentDestination;
+  toAgent?: (text: string) => Promise<unknown>;
+  /** Replaces the default back-and-title row, for the main-area panel. */
+  header?: React.ReactNode;
   ui: Ui;
 }) {
   const { styles, theme } = ui;
   const readDetail = useRpc(detailRpc);
   const readDiffs = useRpc(diffsRpc);
-  const addDiffNote = useRpc(addDiffNoteRpc);
-  const addDraft = useRpc(addDraftRpc);
+  const addCodeComment = useRpc(addCodeCommentRpc);
   const queryClient = useQueryClient();
   const write = useWrite(itemRef);
   const detail = useQuery({ queryKey: detailKey(itemRef), queryFn: () => readDetail(itemRef) });
@@ -302,9 +330,7 @@ export function ChangesView({
   // Open the file a thread pointed at, or everything when the MR is small.
   const initiallyOpen = useMemo(() => {
     if (focusPath) {
-      return new Set(
-        files.filter((file) => file.newPath === focusPath || file.oldPath === focusPath).map(fileKey),
-      );
+      return new Set(files.filter((file) => file.newPath === focusPath || file.oldPath === focusPath).map(fileKey));
     }
     return files.length <= 3 ? new Set(files.map(fileKey)) : new Set<string>();
   }, [files, focusPath]);
@@ -322,7 +348,7 @@ export function ChangesView({
       <Centered styles={styles}>
         <Text style={styles.error}>{errorText(detail.error ?? diffs.error)}</Text>
         <View style={styles.row}>
-          <Button label="Back" onPress={onBack} styles={styles} theme={theme} />
+          {onBack ? <Button label="Back" onPress={onBack} styles={styles} theme={theme} /> : null}
           <Button
             label="Retry"
             onPress={() => {
@@ -339,84 +365,104 @@ export function ChangesView({
 
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
-  const diffRefs = detail.data.diffRefs;
+  const data = detail.data;
 
-  const comment = (file: DiffFile, line: DiffLine, body: string, asDraft: boolean) => {
-    if (!diffRefs) {
-      return Promise.reject(new Error("GitLab did not report the commits this MR compares."));
-    }
-    const anchor = {
-      oldPath: file.oldPath,
-      newPath: file.newPath,
-      oldLine: line.kind === "added" ? null : line.oldLine,
-      newLine: line.kind === "removed" ? null : line.newLine,
-    };
-    if (asDraft) {
+  const handlers: CommentHandlers = {
+    toAgent: toAgent ? (selection, body) => toAgent(agentMessage(data, selection, body)) : undefined,
+    toGitLab: (selection, body, asDraft) => {
+      const diffRefs = data.diffRefs;
+      const first = selection.lines[0];
+      const last = selection.lines[selection.lines.length - 1];
+      if (!diffRefs || !first || !last) {
+        return Promise.reject(new Error("GitLab did not report the commits this MR compares."));
+      }
+      const pick = ({ kind, oldLine, newLine, oldPos, newPos }: DiffLine) => ({ kind, oldLine, newLine, oldPos, newPos });
       return write(async () => {
-        await addDraft({ projectPath: itemRef.projectPath, iid: itemRef.iid, body, code: { diffRefs, ...anchor } });
-        await queryClient.invalidateQueries({ queryKey: draftsKey(itemRef.projectPath, itemRef.iid) });
+        await addCodeComment({
+          projectPath: itemRef.projectPath,
+          iid: itemRef.iid,
+          body,
+          diffRefs,
+          oldPath: selection.file.oldPath,
+          newPath: selection.file.newPath,
+          start: pick(first),
+          end: pick(last),
+          asDraft,
+        });
+        if (asDraft) {
+          await queryClient.invalidateQueries({ queryKey: draftsKey(itemRef.projectPath, itemRef.iid) });
+        }
       });
-    }
-    return write(() => addDiffNote({ noteableId: detail.data.id, body, diffRefs, ...anchor }));
+    },
+  };
+
+  const refresh = () => {
+    void detail.refetch();
+    void diffs.refetch();
   };
 
   return (
     <ProjectContext.Provider value={itemRef.projectPath}>
-    <View style={{ gap: 12 }}>
-      <View style={styles.row}>
-        <IconButton icon="ChevronLeft" label="Back" onPress={onBack} theme={theme} styles={styles} />
-        <Text style={styles.muted} numberOfLines={1}>
-          {detail.data.reference} · {files.length} files
+      <View style={{ gap: 12 }}>
+        {header ?? (
+          <View style={styles.row}>
+            {onBack ? <IconButton icon="ChevronLeft" label="Back" onPress={onBack} theme={theme} styles={styles} /> : null}
+            <Text style={styles.muted} numberOfLines={1}>
+              {data.reference} · {files.length} files
+            </Text>
+            <Text style={[styles.small, { color: theme.colors.statusSuccess }]}>+{additions}</Text>
+            <Text style={[styles.small, { color: theme.colors.statusDanger }]}>−{deletions}</Text>
+            <View style={styles.spacer} />
+            {onOpenWide ? (
+              <IconButton icon="Maximize2" label="Open in the main area" onPress={onOpenWide} theme={theme} styles={styles} />
+            ) : null}
+            <IconButton
+              icon="RefreshCw"
+              label="Refresh"
+              onPress={refresh}
+              disabled={detail.isFetching || diffs.isFetching}
+              theme={theme}
+              styles={styles}
+            />
+            <IconButton
+              icon="ExternalLink"
+              label="Open the changes in GitLab"
+              onPress={() => void openExternalUrl(`${data.webUrl}/diffs`)}
+              theme={theme}
+              styles={styles}
+            />
+          </View>
+        )}
+        {destination?.kind === "agent" ? null : <ReviewBar detail={data} write={write} ui={ui} />}
+        <Text style={styles.small}>
+          {files.length} files · +{additions} −{deletions} · click a line to comment, then another to select a range
         </Text>
-        <Text style={[styles.small, { color: theme.colors.statusSuccess }]}>+{additions}</Text>
-        <Text style={[styles.small, { color: theme.colors.statusDanger }]}>−{deletions}</Text>
-        <View style={styles.spacer} />
-        <IconButton
-          icon="RefreshCw"
-          label="Refresh"
-          onPress={() => {
-            void detail.refetch();
-            void diffs.refetch();
-          }}
-          disabled={detail.isFetching || diffs.isFetching}
-          theme={theme}
-          styles={styles}
-        />
-        <IconButton
-          icon="ExternalLink"
-          label="Open the changes in GitLab"
-          onPress={() => void openExternalUrl(`${detail.data.webUrl}/diffs`)}
-          theme={theme}
-          styles={styles}
-        />
+        {diffs.data.truncated ? <Text style={styles.small}>Only the first 500 files are shown.</Text> : null}
+        {files.map((file) => (
+          <FileDiff
+            key={fileKey(file)}
+            file={file}
+            detail={data}
+            expanded={isOpen(file)}
+            onToggle={() =>
+              setExpanded((current) => {
+                const next = new Set(current);
+                const key = fileKey(file);
+                if (next.has(key)) {
+                  next.delete(key);
+                } else {
+                  next.add(key);
+                }
+                return next;
+              })
+            }
+            actions={actions}
+            destination={destination}
+            handlers={handlers}
+            ui={ui}
+          />
+        ))}
       </View>
-      <ReviewBar detail={detail.data} write={write} ui={ui} />
-      {detail.data.canComment ? <Text style={styles.small}>Tap a line to comment on it.</Text> : null}
-      {diffs.data.truncated ? <Text style={styles.small}>Only the first 500 files are shown.</Text> : null}
-      {files.map((file) => (
-        <FileDiff
-          key={fileKey(file)}
-          file={file}
-          detail={detail.data}
-          expanded={isOpen(file)}
-          onToggle={() =>
-            setExpanded((current) => {
-              const next = new Set(current);
-              const key = fileKey(file);
-              if (next.has(key)) {
-                next.delete(key);
-              } else {
-                next.add(key);
-              }
-              return next;
-            })
-          }
-          actions={actions}
-          onComment={comment}
-          ui={ui}
-        />
-      ))}
-    </View>
     </ProjectContext.Provider>
   );
 }

@@ -3,6 +3,7 @@ import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { TextInput, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
+import { openDiff } from "../plugin-client";
 import { ProjectContext, useProjectPath, usePasteUpload, useSuggestions } from "./composer-tools";
 import { Pressable, Text, View } from "react-native";
 import {
@@ -889,6 +890,12 @@ export function ItemDetail({
               <Text style={[ui.styles.metaValue, { color: ui.theme.colors.accent }]}>
                 Files and code comments ›
               </Text>
+              <Button
+                label="Open diff"
+                onPress={() => openDiff(ui.workspaceId, itemRef)}
+                styles={ui.styles}
+                theme={ui.theme}
+              />
             </Pressable>
           ) : null}
           {edit && (stateAction || isMr) ? (
