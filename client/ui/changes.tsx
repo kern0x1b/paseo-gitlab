@@ -1,7 +1,7 @@
 import { openExternalUrl, useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useMemo, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import {
   addCodeCommentRpc,
   detailRpc,
@@ -30,6 +30,10 @@ const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monosp
  * line number alone on one row and the code on the next.
  */
 const CODE_WRAP = Platform.OS === "web" ? ({ whiteSpace: "pre-wrap", wordBreak: "break-all" } as object) : null;
+/** The default, as in GitLab and editors: a line keeps its length and the file scrolls sideways. */
+const CODE_NOWRAP = Platform.OS === "web" ? ({ whiteSpace: "pre" } as object) : null;
+/** Keeps threads and comment boxes in view while the code under them scrolls sideways. */
+const PIN_LEFT = Platform.OS === "web" ? ({ position: "sticky", left: 0 } as object) : null;
 
 export function diffsKey(ref: ItemRef) {
   return ["gitlab", "diffs", ref.projectPath, ref.iid] as const;
@@ -61,10 +65,12 @@ function LineRow({
   tokens,
   onPress,
   selected,
+  wrap,
   ui,
 }: {
   line: DiffLine;
   tokens: Token[];
+  wrap: boolean;
   onPress?: () => void;
   selected: boolean;
   ui: Ui;
@@ -130,7 +136,13 @@ function LineRow({
           <Text style={{ ...cell, width: 16, textAlign: "center", color: theme.colors.foregroundMuted }}>
             {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : ""}
           </Text>
-          <Text selectable style={[{ ...cell, flex: 1, color: theme.colors.foreground, paddingRight: 8 }, CODE_WRAP]}>
+          <Text
+            selectable
+            style={[
+              { ...cell, color: theme.colors.foreground, paddingRight: 8 },
+              wrap ? [{ flex: 1 }, CODE_WRAP] : [{ flexGrow: 1, flexShrink: 0 }, CODE_NOWRAP],
+            ]}
+          >
             {line.text
               ? tokens.map((token, index) =>
                   palette[token.kind] ? (
@@ -216,6 +228,7 @@ export function FileDiff({
   handlers,
   pending = [],
   viewer = null,
+  wrap = false,
   ui,
 }: {
   file: DiffFile;
@@ -226,6 +239,8 @@ export function FileDiff({
   handlers: CommentHandlers;
   /** This file's comments waiting in your local review. */
   pending?: PendingComment[];
+  /** Wrap long lines instead of scrolling the file sideways. */
+  wrap?: boolean;
   viewer?: { username: string; name: string; avatarUrl?: string | null } | null;
   ui: Ui;
 }) {
@@ -236,6 +251,9 @@ export function FileDiff({
   const placed = new Set<string>();
   const title = file.renamedFile ? `${file.oldPath} → ${file.newPath}` : file.newPath;
   const stacking = Boolean(handlers.stack);
+  const [visibleWidth, setVisibleWidth] = useState(0);
+  // What sits between code lines takes the visible width and stays put while the code scrolls.
+  const pinned = wrap ? null : [{ width: visibleWidth || undefined }, PIN_LEFT];
   // Highlighted once per file; a hunk header resets the carried block-comment state.
   const highlighted = useMemo(() => {
     const language = languageOf(file.newPath);
@@ -318,7 +336,12 @@ export function FileDiff({
               />
             </View>
           ) : (
-            <View style={{ paddingVertical: 4 }}>
+            <ScrollView
+              horizontal={!wrap}
+              scrollEnabled={!wrap}
+              onLayout={(event) => setVisibleWidth(event.nativeEvent.layout.width)}
+            >
+              <View style={{ paddingVertical: 4, minWidth: wrap ? undefined : visibleWidth || undefined, flex: wrap ? 1 : undefined }}>
               {file.lines.map((line, index) => {
                 const here = threads.filter((discussion) => anchoredAt(discussion, line));
                 const waiting = pending.filter((comment) => endsAt(comment, line));
@@ -328,30 +351,32 @@ export function FileDiff({
                   <Fragment key={index}>
                     <LineRow
                       line={line}
+                      wrap={wrap}
                       tokens={highlighted[index] ?? []}
                       selected={index >= low && index <= high && line.kind !== "hunk"}
                       onPress={canComment && line.kind !== "hunk" ? () => pick(index) : undefined}
                       ui={ui}
                     />
                     {here.map((discussion) => (
-                      <View key={discussion.id} style={{ padding: 8 }}>
+                      <View key={discussion.id} style={[{ padding: 8 }, pinned]}>
                         <Thread discussion={discussion} actions={actions} ui={ui} />
                       </View>
                     ))}
                     {handlers.stack
                       ? waiting.map((comment) => (
-                          <PendingNote
-                            key={comment.id}
-                            comment={comment}
-                            viewer={viewer}
-                            onEdit={(body) => handlers.stack!.edit(comment.id, body)}
-                            onRemove={() => handlers.stack!.remove(comment.id)}
-                            ui={ui}
-                          />
+                          <View key={comment.id} style={pinned}>
+                            <PendingNote
+                              comment={comment}
+                              viewer={viewer}
+                              onEdit={(body) => handlers.stack!.edit(comment.id, body)}
+                              onRemove={() => handlers.stack!.remove(comment.id)}
+                              ui={ui}
+                            />
+                          </View>
                         ))
                       : null}
                     {primary && selectedLines.length > 0 ? (
-                      <View style={{ padding: 8, gap: 6 }}>
+                      <View style={[{ padding: 8, gap: 6 }, pinned]}>
                         <Text style={styles.small}>
                           Comment on {rangeLabel(selectedLines)} · click another line to select a range
                         </Text>
@@ -379,12 +404,13 @@ export function FileDiff({
                     .filter((discussion) => !placed.has(discussion.id))
                     .map((discussion) => (
                       // Anchored to a line outside the shown hunks, or to an older version of the file.
-                      <View key={discussion.id} style={{ padding: 8, gap: 4 }}>
+                      <View key={discussion.id} style={[{ padding: 8, gap: 4 }, pinned]}>
                         <Text style={styles.small}>On a line not in this diff</Text>
                         <Thread discussion={discussion} actions={actions} ui={ui} />
                       </View>
                     ))}
-            </View>
+              </View>
+            </ScrollView>
           )}
         </>
       ) : null}

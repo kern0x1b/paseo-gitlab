@@ -21,6 +21,7 @@ const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monosp
 const TREE_WIDTH = { initial: 300, min: 180, max: 640 };
 const TREE_WIDTH_KEY = "paseo-gitlab:tree-width";
 const DETAIL_REFRESH_MS = 30_000;
+const WRAP_KEY = "paseo-gitlab:wrap-lines";
 
 function storedTreeWidth(): number {
   const raw = Number(globalThis.localStorage?.getItem(TREE_WIDTH_KEY));
@@ -253,6 +254,16 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
   const review = reviewKey(target);
   const pending = usePendingComments(review);
   const [treeOpen, setTreeOpen] = useState(true);
+  const [wrap, setWrapState] = useState(() => globalThis.localStorage?.getItem(WRAP_KEY) === "true");
+  const toggleWrap = () =>
+    setWrapState((current) => {
+      try {
+        globalThis.localStorage?.setItem(WRAP_KEY, String(!current));
+      } catch {
+        // No storage: the choice lasts until the window closes.
+      }
+      return !current;
+    });
   const [treeWidth, setTreeWidthState] = useState(storedTreeWidth);
   const setTreeWidth = useMemo(
     () => (next: number) => {
@@ -363,6 +374,12 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
           <Text style={[styles.small, { fontFamily: MONO, flexShrink: 1 }]} numberOfLines={1}>
             {data.sourceBranch} → {data.targetBranch}
           </Text>
+          <Button
+            label={wrap ? "Wrap lines ✓" : "Wrap lines"}
+            onPress={toggleWrap}
+            styles={styles}
+            theme={theme}
+          />
           <Button label="Other MR" onPress={onPickOther} styles={styles} theme={theme} />
           <IconButton
             icon="ExternalLink"
@@ -434,6 +451,7 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
                     }}
                     pending={pending.filter((comment) => comment.oldPath === file.oldPath && comment.newPath === file.newPath)}
                     viewer={{ username: data.viewer, name: data.viewer }}
+                    wrap={wrap}
                     ui={ui}
                   />
                 </View>
