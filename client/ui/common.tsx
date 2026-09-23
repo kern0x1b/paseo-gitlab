@@ -122,6 +122,7 @@ export function IconButton({
   theme,
   styles,
   disabled,
+  active,
 }: {
   icon: string;
   label: string;
@@ -129,6 +130,8 @@ export function IconButton({
   theme: PluginTheme;
   styles: Styles;
   disabled?: boolean;
+  /** A toggle that is on: painted like a pressed button. */
+  active?: boolean;
 }) {
   return (
     <Pressable
@@ -138,11 +141,11 @@ export function IconButton({
       disabled={disabled}
       style={({ pressed }) => [
         styles.iconButton,
-        pressed ? styles.iconButtonPressed : null,
+        pressed || active ? styles.iconButtonPressed : null,
         disabled ? styles.buttonDisabled : null,
       ]}
     >
-      <Icon name={icon} size={15} color={theme.colors.foregroundMuted} />
+      <Icon name={icon} size={15} color={active ? theme.colors.foreground : theme.colors.foregroundMuted} />
     </Pressable>
   );
 }

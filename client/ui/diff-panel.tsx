@@ -348,54 +348,62 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
     <ProjectContext.Provider value={target.projectPath}>
       <View style={{ flex: 1 }}>
         <View
-          style={[
-            styles.row,
-            {
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderBottomWidth: 1,
-              borderBottomColor: theme.colors.border,
-              gap: 10,
-              flexWrap: "wrap",
-            },
-          ]}
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            gap: 4,
+            borderBottomWidth: 1,
+            borderBottomColor: theme.colors.border,
+          }}
         >
-          <IconButton
-            icon={treeOpen ? "PanelLeftClose" : "PanelLeftOpen"}
-            label={treeOpen ? "Hide the file tree" : "Show the file tree"}
-            onPress={() => setTreeOpen((value) => !value)}
-            theme={theme}
-            styles={styles}
-          />
-          <Text style={styles.muted}>{shortReference(data.reference)}</Text>
-          <Text style={[styles.title, { flex: 1, minWidth: 200 }]} numberOfLines={1}>
-            {data.title}
-          </Text>
-          <Text style={[styles.small, { fontFamily: MONO, flexShrink: 1 }]} numberOfLines={1}>
-            {data.sourceBranch} → {data.targetBranch}
-          </Text>
-          <Button
-            label={wrap ? "Wrap lines ✓" : "Wrap lines"}
-            onPress={toggleWrap}
-            styles={styles}
-            theme={theme}
-          />
-          <Button label="Other MR" onPress={onPickOther} styles={styles} theme={theme} />
-          <IconButton
-            icon="ExternalLink"
-            label="Open the changes in GitLab"
-            onPress={() => void openExternalUrl(`${data.webUrl}/diffs`)}
-            theme={theme}
-            styles={styles}
-          />
-          <Button
-            label={pending.length > 0 ? `Your review · ${pending.length}` : "Your review"}
-            primary={pending.length > 0}
-            disabled={pending.length === 0}
-            onPress={() => setSubmitting(true)}
-            styles={styles}
-            theme={theme}
-          />
+          <View style={[styles.row, { gap: 8 }]}>
+            <IconButton
+              icon={treeOpen ? "PanelLeftClose" : "PanelLeftOpen"}
+              label={treeOpen ? "Hide the file tree" : "Show the file tree"}
+              onPress={() => setTreeOpen((value) => !value)}
+              theme={theme}
+              styles={styles}
+            />
+            <Text style={[styles.title, { flex: 1 }]} numberOfLines={1}>
+              {data.title}
+            </Text>
+            <Button
+              label={pending.length > 0 ? `Your review · ${pending.length}` : "Your review"}
+              primary={pending.length > 0}
+              disabled={pending.length === 0}
+              onPress={() => setSubmitting(true)}
+              styles={styles}
+              theme={theme}
+            />
+          </View>
+          <View style={[styles.row, { gap: 6, paddingLeft: 34 }]}>
+            <Text style={[styles.small, { flex: 1 }]} numberOfLines={1}>
+              {[
+                shortReference(data.reference),
+                `${data.sourceBranch} → ${data.targetBranch}`,
+                `${files.length} files`,
+              ].join("  ·  ")}
+              {"  ·  "}
+              <Text style={{ color: theme.colors.statusSuccess }}>+{files.reduce((sum, file) => sum + file.additions, 0)}</Text>{" "}
+              <Text style={{ color: theme.colors.statusDanger }}>−{files.reduce((sum, file) => sum + file.deletions, 0)}</Text>
+            </Text>
+            <IconButton
+              icon="WrapText"
+              label={wrap ? "Stop wrapping long lines" : "Wrap long lines"}
+              onPress={toggleWrap}
+              active={wrap}
+              theme={theme}
+              styles={styles}
+            />
+            <IconButton icon="ArrowLeftRight" label="Show another merge request" onPress={onPickOther} theme={theme} styles={styles} />
+            <IconButton
+              icon="ExternalLink"
+              label="Open the changes in GitLab"
+              onPress={() => void openExternalUrl(`${data.webUrl}/diffs`)}
+              theme={theme}
+              styles={styles}
+            />
+          </View>
         </View>
         <View style={{ flex: 1, flexDirection: "row" }}>
           {treeOpen ? (
@@ -413,9 +421,6 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
             </>
           ) : null}
           <ScrollView ref={scroll} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
-            <Text style={styles.small}>
-              Click a line to comment, then another to select a range. Comments collect in your review until you submit it.
-            </Text>
             {files.map((file) => {
               const key = fileKey(file);
               return (
