@@ -34,17 +34,25 @@ function todoAction(action: string): string {
   return TODO_ACTIONS[action] ?? humanize(action).toLowerCase();
 }
 
-/** One labelled column of people: a heading, then their avatars side by side, wrapping when there are many. */
-function PeopleColumn({ title, people, styles }: { title: string; people: Person[]; styles: Styles }) {
+/**
+ * One property line, the way GitLab's sidebar and Linear list them: a fixed-width
+ * label, then each person as avatar and name, wrapping when there are several.
+ */
+function PeopleLine({ label, people, styles }: { label: string; people: Person[]; styles: Styles }) {
   return (
-    <View style={{ flex: 1, alignItems: "center", gap: 6 }}>
-      <Text style={[styles.muted, { fontWeight: "600" }]}>{title}</Text>
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+      <Text style={[styles.small, { width: 64, lineHeight: 20 }]}>{label}</Text>
       {people.length === 0 ? (
-        <Text style={styles.muted}>—</Text>
+        <Text style={[styles.small, { lineHeight: 20 }]}>None</Text>
       ) : (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6 }}>
+        <View style={{ flex: 1, flexDirection: "row", flexWrap: "wrap", columnGap: 12, rowGap: 4 }}>
           {people.map((person) => (
-            <Avatar key={person.username} person={person} styles={styles} size={32} />
+            <View key={person.username} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Avatar person={person} styles={styles} size={20} />
+              <Text style={styles.text} numberOfLines={1}>
+                {person.name}
+              </Text>
+            </View>
           ))}
         </View>
       )}
@@ -67,7 +75,7 @@ export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: It
       accessibilityRole="button"
       accessibilityLabel={`${item.reference} ${item.title}`}
       onPress={() => onOpen({ kind: item.kind, projectPath: item.projectPath, iid: item.iid })}
-      style={({ pressed }) => [styles.listRow, { gap: 10 }, pressed ? styles.listRowPressed : null]}
+      style={({ pressed }) => [styles.listRow, { gap: 8, paddingVertical: 10 }, pressed ? styles.listRowPressed : null]}
     >
       <View style={{ flexDirection: "row", gap: 10 }}>
         <View style={{ width: 8, paddingTop: 6, alignItems: "center" }}>
@@ -86,12 +94,12 @@ export function ItemRow({ item, onOpen, ui }: { item: ListItem; onOpen: (ref: It
           <Labels labels={item.labels} styles={styles} />
         </View>
       </View>
-      <View style={{ flexDirection: "row", borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: 10 }}>
-        <PeopleColumn title={item.assignees.length > 1 ? "Assignees" : "Assignee"} people={item.assignees} styles={styles} />
+      <View style={{ gap: 4, paddingLeft: 18 }}>
+        <PeopleLine label={item.assignees.length > 1 ? "Assignees" : "Assignee"} people={item.assignees} styles={styles} />
         {item.kind === "mr" ? (
-          <PeopleColumn title="Reviewers" people={item.reviewers} styles={styles} />
+          <PeopleLine label={item.reviewers.length > 1 ? "Reviewers" : "Reviewer"} people={item.reviewers} styles={styles} />
         ) : (
-          <PeopleColumn title="Author" people={item.author ? [item.author] : []} styles={styles} />
+          <PeopleLine label="Author" people={item.author ? [item.author] : []} styles={styles} />
         )}
       </View>
     </Pressable>
