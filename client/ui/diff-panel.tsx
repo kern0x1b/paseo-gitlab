@@ -17,7 +17,6 @@ import { SubmitReview } from "./submit-review";
 import { buildTree, type TreeNode } from "./tree";
 import { useStyles, type Styles } from "./styles";
 
-const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
 const TREE_WIDTH = { initial: 300, min: 180, max: 640 };
 const TREE_WIDTH_KEY = "paseo-gitlab:tree-width";
 const DETAIL_REFRESH_MS = 30_000;
