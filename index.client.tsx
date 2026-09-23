@@ -1,11 +1,12 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
+import { startHeaderButtons } from "./client/header-buttons";
 import { PANEL_ID, SETTINGS_ID, setPluginClient } from "./client/plugin-client";
 import { GitLabPanel } from "./client/ui/panel";
 import { GitLabSettings } from "./client/ui/settings";
 
 const ICON = "GitMerge";
 
-/** Client entry: the panel (explorer sidebar by default), its settings screen and a Cmd+K shortcut. */
+/** Client entry: the panel (explorer sidebar by default), a header button to open it, its settings screen and a Cmd+K shortcut. */
 export default function contribute(client: PluginClientContext) {
   setPluginClient(client);
   const removers = [
@@ -26,6 +27,7 @@ export default function contribute(client: PluginClientContext) {
       context: "workspace",
       onSelect: (context) => context.openPanel(PANEL_ID, { location: "explorer" }),
     }),
+    startHeaderButtons(client, ICON),
   ];
   return () => {
     for (const remove of removers) {
