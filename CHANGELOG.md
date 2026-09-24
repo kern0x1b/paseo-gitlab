@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Issue board: a clear board switcher with new, rename and delete; drag and drop between and within
+  columns; add and remove lists; create an issue in a column; author and milestone filters
+- **GitLab item** panel: issues and MRs opened in tabs of their own in the main area
 - An **Issue board** in the main area, as GitLab's issue boards show it: pick a board, see its
   columns with counts and cards (labels, milestone, due date, assignees), search and filter by
   assignee and labels, fold columns, open an issue in a side drawer, and move a card to another list

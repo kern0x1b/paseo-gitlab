@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { Text, View } from "react-native";
 import { authStatusRpc, listsRpc, type ItemRef, type Job, type PipelineRef } from "../../shared/contract";
-import { openBoard, openDiff, openGitLabSettings, openRepository } from "../plugin-client";
+import { openBoard, openDiff, openGitLabSettings, openItem, openRepository } from "../plugin-client";
 import { Button, Centered, errorText, HostContext, IconButton } from "./common";
 import { ChangesView } from "./changes";
 import { CreateView, type CreateTarget } from "./create";
@@ -95,6 +95,7 @@ function GitLabPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
         onBack={back}
         onOpenPipeline={(ref) => push({ kind: "pipeline", ref })}
         onOpenChanges={(focusPath) => push({ kind: "changes", ref: top.ref, focusPath })}
+        onOpenInTab={() => openItem(workspaceId, top.ref)}
         ui={{ theme, styles, host: status.data.host, workspaceId }}
       />
     );

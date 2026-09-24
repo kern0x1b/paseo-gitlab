@@ -605,6 +605,7 @@ function Header({
   onBack,
   onRefresh,
   onEdit,
+  onOpenInTab,
   refreshing,
   ui,
 }: {
@@ -612,6 +613,7 @@ function Header({
   onBack: () => void;
   onRefresh: () => void;
   onEdit?: () => void;
+  onOpenInTab?: () => void;
   refreshing: boolean;
   ui: Ui;
 }) {
@@ -651,6 +653,15 @@ function Header({
           theme={ui.theme}
           styles={ui.styles}
         />
+        {onOpenInTab ? (
+          <IconButton
+            icon="SquareArrowOutUpRight"
+            label="Open in a tab"
+            onPress={onOpenInTab}
+            theme={ui.theme}
+            styles={ui.styles}
+          />
+        ) : null}
         <IconButton
           icon="ExternalLink"
           label="Open in GitLab"
@@ -729,12 +740,15 @@ export function ItemDetail({
   onBack,
   onOpenPipeline,
   onOpenChanges,
+  onOpenInTab,
   ui,
 }: {
   itemRef: ItemRef;
   onBack: () => void;
   onOpenPipeline: (ref: PipelineRef) => void;
   onOpenChanges: (focusPath?: string) => void;
+  /** Shown where the item is not already in a tab of its own: the sidebar and the board drawer. */
+  onOpenInTab?: () => void;
   ui: Ui;
 }) {
   const readDetail = useRpc(detailRpc);
@@ -805,6 +819,7 @@ export function ItemDetail({
           detail={detail}
           onBack={onBack}
           onRefresh={() => void query.refetch()}
+          onOpenInTab={onOpenInTab}
           onEdit={edit && !editing ? () => setEditing(true) : undefined}
           refreshing={query.isFetching}
           ui={ui}

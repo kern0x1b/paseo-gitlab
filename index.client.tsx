@@ -3,6 +3,7 @@ import { startHeaderButtons } from "./client/header-buttons";
 import {
   BOARD_PANEL_ID,
   DIFF_PANEL_ID,
+  ITEM_PANEL_ID,
   PANEL_ID,
   REPO_PANEL_ID,
   SETTINGS_ID,
@@ -10,6 +11,7 @@ import {
 } from "./client/plugin-client";
 import { BoardPanel } from "./client/ui/board-panel";
 import { DiffPanel } from "./client/ui/diff-panel";
+import { ItemPanel } from "./client/ui/item-panel";
 import { GitLabPanel } from "./client/ui/panel";
 import { RepositoryPanel } from "./client/ui/repo-panel";
 import { GitLabSettings } from "./client/ui/settings";
@@ -52,6 +54,14 @@ export default function contribute(client: PluginClientContext) {
       context: "workspace",
       locations: ["workspace"],
       Component: BoardPanel,
+    }),
+    client.addWorkspacePanel({
+      id: ITEM_PANEL_ID,
+      title: "GitLab item",
+      icon: "SquareArrowOutUpRight",
+      context: "workspace",
+      locations: ["workspace"],
+      Component: ItemPanel,
     }),
     client.addSettingsScreen({ id: SETTINGS_ID, title: "GitLab", icon: ICON, Component: GitLabSettings }),
     client.addCommandCenterItem({

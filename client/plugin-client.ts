@@ -1,6 +1,7 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import type { ItemRef } from "../shared/contract";
 import { setDiffTarget } from "./diff-target";
+import { openItemTab } from "./item-tabs";
 
 /**
  * Panel components get host props, not the client context, but the empty state
@@ -21,6 +22,13 @@ export const PANEL_ID = "gitlab";
 export const DIFF_PANEL_ID = "gitlab-diff";
 export const REPO_PANEL_ID = "gitlab-repo";
 export const BOARD_PANEL_ID = "gitlab-board";
+export const ITEM_PANEL_ID = "gitlab-item";
+
+/** An issue or MR in a tab of its own in the workspace's main area. */
+export function openItem(workspaceId: string, ref: ItemRef, title: string | null = null): void {
+  openItemTab(workspaceId, ref, title);
+  current?.openPanel(ITEM_PANEL_ID, { workspaceId, location: "workspace" });
+}
 
 /** The project's issue board, in the workspace's main area. */
 export function openBoard(workspaceId: string): void {

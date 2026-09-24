@@ -184,15 +184,24 @@ hard to undo:
 The project's issue boards in the main area, the way GitLab shows them. Open it from the board icon
 in the panel header, the **+** menu of the workspace tabs, or Cmd+K **GitLab issue board**.
 
-- Pick any board of the project; the choice is remembered per project.
-- Every column with its count: Open, one per label list, and Closed, folded by default as in GitLab.
-  Columns scroll on their own and load 20 cards at a time.
-- Cards show the title, labels (without the column's own), the milestone, the due date (red when
-  overdue), the comment count and the assignees.
-- Search and filter by assignee (me, nobody, anybody, or a person) and by labels; the filters are
-  remembered per board.
-- Click a card to open the issue in a side drawer with everything the panel's detail view offers;
-  **Move to list** on a card moves it the way dragging does in GitLab.
+- **Boards**: the switcher next to the project lists every board; create a new one, rename or
+  delete the current one. The choice is remembered per project.
+- **Columns**: Open, one per label list, and Closed (folded by default, as in GitLab). Each shows its
+  count, scrolls on its own and loads 20 cards at a time. **Add list** at the end adds a column for a
+  label; a column's menu removes it. **+** in a column creates an issue there, with its label.
+- **Cards**: title, labels (without the column's own), milestone, due date (red when overdue),
+  comment count and assignees.
+- **Moving**: drag a card to another column or to another place in the same one, as in GitLab;
+  **Move to list** on a card does the same without the mouse.
+- **Filters**: search, assignee (me, nobody, anybody, a person), author, milestone (none, any,
+  started, upcoming, or one) and labels; remembered per board.
+- Click a card to open the issue in a side drawer, or in a tab of its own.
+
+## Issues and merge requests in tabs
+
+The tab icon in the header of an issue or MR (in the panel or the board drawer) opens it in the
+**GitLab item** panel of the main area. Every item opened this way gets a tab there, kept across
+reloads; pipelines and job logs open inside the tab, and an MR's changes open in the MR diff panel.
 
 ## Pipelines and jobs
 
