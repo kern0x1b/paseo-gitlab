@@ -8,24 +8,35 @@ import { describe, it } from "node:test";
 import { boardFilterVariables, toBoardCards, toBoardColumns } from "../server/queries";
 
 const label = (title: string) => ({ title, color: "#000", textColor: "#fff" });
+const EMPTY = { search: "", assignee: null, labels: [], author: null, milestone: null };
 
 describe("board filters", () => {
   it("sends nothing for an empty search bar", () => {
-    assert.equal(boardFilterVariables({ search: " ", assignee: null, labels: [] }), null);
+    assert.equal(boardFilterVariables({ ...EMPTY, search: " " }), null);
   });
 
   it("maps search, labels and each assignee choice", () => {
-    assert.deepEqual(boardFilterVariables({ search: "yaleo", assignee: "mira", labels: ["P1", "bug"] }), {
-      search: "yaleo",
-      labelName: ["P1", "bug"],
-      assigneeUsername: ["mira"],
+    assert.deepEqual(
+      boardFilterVariables({ ...EMPTY, search: "yaleo", assignee: "mira", labels: ["P1", "bug"] }),
+      {
+        search: "yaleo",
+        labelName: ["P1", "bug"],
+        assigneeUsername: ["mira"],
+      },
+    );
+    assert.deepEqual(boardFilterVariables({ ...EMPTY, assignee: "@none" }), { assigneeWildcardId: "NONE" });
+    assert.deepEqual(boardFilterVariables({ ...EMPTY, assignee: "@any" }), { assigneeWildcardId: "ANY" });
+  });
+
+  it("maps the author and every milestone choice", () => {
+    assert.deepEqual(boardFilterVariables({ ...EMPTY, author: "sam", milestone: "Sprint 24" }), {
+      authorUsername: "sam",
+      milestoneTitle: "Sprint 24",
     });
-    assert.deepEqual(boardFilterVariables({ search: "", assignee: "@none", labels: [] }), {
-      assigneeWildcardId: "NONE",
+    assert.deepEqual(boardFilterVariables({ ...EMPTY, milestone: "@upcoming" }), {
+      milestoneWildcardId: "UPCOMING",
     });
-    assert.deepEqual(boardFilterVariables({ search: "", assignee: "@any", labels: [] }), {
-      assigneeWildcardId: "ANY",
-    });
+    assert.deepEqual(boardFilterVariables({ ...EMPTY, milestone: "@none" }), { milestoneWildcardId: "NONE" });
   });
 });
 
@@ -43,7 +54,7 @@ describe("board columns and cards", () => {
                 listType: "label",
                 collapsed: false,
                 issuesCount: 2,
-                label: label("Todo"),
+                label: { id: "gid://gitlab/ProjectLabel/1", ...label("Todo") },
               },
               {
                 id: "l3",
@@ -59,16 +70,16 @@ describe("board columns and cards", () => {
       },
     });
     assert.deepEqual(
-      columns.map((column) => [column.title, column.collapsed, column.issuesCount]),
+      columns.map((column) => [column.title, column.collapsed, column.issuesCount, column.label?.id ?? null]),
       [
-        ["Open", false, 5],
-        ["Todo", false, 2],
-        ["Closed", true, 0],
+        ["Open", false, 5, null],
+        ["Todo", false, 2, "gid://gitlab/ProjectLabel/1"],
+        ["Closed", true, 0, null],
       ],
     );
   });
 
-  it("drops the column's own label from its cards", () => {
+  it("drops the column's own label from its cards and keeps the card's global id", () => {
     const page = toBoardCards({
       boardList: {
         label: { title: "Todo" },
@@ -77,6 +88,7 @@ describe("board columns and cards", () => {
           pageInfo: { hasNextPage: false, endCursor: null },
           nodes: [
             {
+              id: "gid://gitlab/Issue/70",
               iid: "7",
               title: "Fix it",
               reference: "g/p#7",
@@ -92,12 +104,14 @@ describe("board columns and cards", () => {
         },
       },
     });
-    assert.equal(page.cards[0]!.projectPath, "g/p");
+    const card = page.cards[0]!;
+    assert.equal(card.id, "gid://gitlab/Issue/70");
+    assert.equal(card.projectPath, "g/p");
     assert.deepEqual(
-      page.cards[0]!.labels.map((entry) => entry.title),
+      card.labels.map((entry) => entry.title),
       ["P1"],
     );
-    assert.equal(page.cards[0]!.milestone, "Sprint 24");
+    assert.equal(card.milestone, "Sprint 24");
     assert.equal(page.count, 1);
   });
 });

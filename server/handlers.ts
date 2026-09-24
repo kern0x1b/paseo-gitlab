@@ -18,6 +18,7 @@ import type {
   BoardFilters,
   BoardSummary,
   Branch,
+  Milestone,
   Commit,
   MergeRequestVersion,
   TreeEntry,
@@ -45,6 +46,13 @@ import {
 import { readCheckout } from "./workspace";
 import {
   BOARD_CARDS_QUERY,
+  CREATE_BOARD_ISSUE_MUTATION,
+  CREATE_BOARD_LIST_MUTATION,
+  CREATE_BOARD_MUTATION,
+  DESTROY_BOARD_LIST_MUTATION,
+  DESTROY_BOARD_MUTATION,
+  MILESTONES_QUERY,
+  UPDATE_BOARD_MUTATION,
   BOARD_COLUMNS_QUERY,
   BOARDS_QUERY,
   boardFilterVariables,
@@ -886,6 +894,8 @@ export function createHandlers(deps: AuthDeps) {
       boardId: string;
       fromColumnId: string;
       toColumnId: string;
+      moveBeforeId?: string;
+      moveAfterId?: string;
     }): Promise<{ ok: true }> {
       const connection = await requireConnection(deps);
       return mutate(
@@ -898,9 +908,101 @@ export function createHandlers(deps: AuthDeps) {
           boardId: input.boardId,
           fromListId: input.fromColumnId,
           toListId: input.toColumnId,
+          moveBeforeId: input.moveBeforeId ?? null,
+          moveAfterId: input.moveAfterId ?? null,
         },
         "move the issue",
       );
+    },
+
+    async createBoard(input: { projectPath: string; name: string }): Promise<BoardSummary> {
+      const connection = await requireConnection(deps);
+      const data = await graphql<{
+        createBoard: { board: BoardSummary | null; errors?: string[] } | null;
+      }>(
+        connection,
+        CREATE_BOARD_MUTATION,
+        { projectPath: input.projectPath, name: input.name.trim() },
+        deps.fetch,
+      );
+      assertNoMutationErrors(data.createBoard, "create the board");
+      const board = data.createBoard?.board;
+      if (!board) {
+        throw new Error("GitLab did not return the new board.");
+      }
+      return { id: board.id, name: board.name, webUrl: board.webUrl };
+    },
+
+    async updateBoard(input: { boardId: string; name: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      return mutate(
+        connection,
+        deps,
+        UPDATE_BOARD_MUTATION,
+        { id: input.boardId, name: input.name.trim() },
+        "rename the board",
+      );
+    },
+
+    async deleteBoard(input: { boardId: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      return mutate(connection, deps, DESTROY_BOARD_MUTATION, { id: input.boardId }, "delete the board");
+    },
+
+    async addBoardColumn(input: { boardId: string; labelId: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      return mutate(connection, deps, CREATE_BOARD_LIST_MUTATION, input, "add the list");
+    },
+
+    async removeBoardColumn(input: { columnId: string }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      return mutate(
+        connection,
+        deps,
+        DESTROY_BOARD_LIST_MUTATION,
+        { listId: input.columnId },
+        "remove the list",
+      );
+    },
+
+    async createBoardCard(input: {
+      projectPath: string;
+      title: string;
+      labelId: string | null;
+    }): Promise<ItemRef> {
+      const connection = await requireConnection(deps);
+      const data = await graphql<{
+        createIssue: { issue: { iid: string } | null; errors?: string[] } | null;
+      }>(
+        connection,
+        CREATE_BOARD_ISSUE_MUTATION,
+        {
+          projectPath: input.projectPath,
+          title: input.title.trim(),
+          labelIds: input.labelId ? [input.labelId] : null,
+        },
+        deps.fetch,
+      );
+      assertNoMutationErrors(data.createIssue, "create the issue");
+      const iid = data.createIssue?.issue?.iid;
+      if (!iid) {
+        throw new Error("GitLab did not return the new issue.");
+      }
+      return { kind: "issue", projectPath: input.projectPath, iid };
+    },
+
+    async milestones(input: { projectPath: string }): Promise<{ milestones: Milestone[] }> {
+      const connection = await requireConnection(deps);
+      const raw = await graphql<{
+        project: { milestones: { nodes: Milestone[] } | null } | null;
+      }>(connection, MILESTONES_QUERY, { path: input.projectPath }, deps.fetch);
+      return {
+        milestones: (raw.project?.milestones?.nodes ?? []).map(({ id, title, dueDate }) => ({
+          id,
+          title,
+          dueDate: dueDate ?? null,
+        })),
+      };
     },
 
     async repoTree(input: {

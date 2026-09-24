@@ -31,7 +31,7 @@ const COLUMN_WIDTH = 300;
 const COLLAPSED_WIDTH = 44;
 const DRAWER_WIDTH = 520;
 const SEARCH_DEBOUNCE_MS = 350;
-const NO_FILTERS: BoardFilters = { search: "", assignee: null, labels: [] };
+const NO_FILTERS: BoardFilters = { search: "", assignee: null, labels: [], author: null, milestone: null };
 
 const BOARD_CHOICE_KEY = "paseo-gitlab:board-choice";
 const BOARD_FILTERS_KEY = "paseo-gitlab:board-filters";

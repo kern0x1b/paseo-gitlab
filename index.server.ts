@@ -35,6 +35,13 @@ import {
   boardCardsRpc,
   boardColumnsRpc,
   boardsRpc,
+  addBoardColumnRpc,
+  createBoardCardRpc,
+  createBoardRpc,
+  deleteBoardRpc,
+  milestonesRpc,
+  removeBoardColumnRpc,
+  updateBoardRpc,
   moveBoardCardRpc,
   branchesRpc,
   commitsRpc,
@@ -109,6 +116,13 @@ export default function contribute(server: PluginServerContext) {
   handle(boardColumnsRpc, (input) => handlers.boardColumns(input));
   handle(boardCardsRpc, (input) => handlers.boardCards(input));
   handle(moveBoardCardRpc, (input) => handlers.moveBoardCard(input));
+  handle(createBoardRpc, (input) => handlers.createBoard(input));
+  handle(updateBoardRpc, (input) => handlers.updateBoard(input));
+  handle(deleteBoardRpc, (input) => handlers.deleteBoard(input));
+  handle(addBoardColumnRpc, (input) => handlers.addBoardColumn(input));
+  handle(removeBoardColumnRpc, (input) => handlers.removeBoardColumn(input));
+  handle(createBoardCardRpc, (input) => handlers.createBoardCard(input));
+  handle(milestonesRpc, (input) => handlers.milestones(input));
   handle(refCommitsRpc, (input) => handlers.refCommits(input));
   handle(branchesRpc, (input) => handlers.branches(input));
   handle(aheadBehindRpc, (input) => handlers.aheadBehind(input));

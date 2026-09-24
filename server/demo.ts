@@ -710,6 +710,10 @@ function pipeline(iid: string) {
 const TODO = label("Todo", "#428bca");
 const DEVELOPMENT = label("Development", "#2d9d78");
 const WAITING_FOR_MERGE = label("Waiting for merge", "#d4a72c");
+const listLabel = (id: string, value: ReturnType<typeof label>) => ({
+  id: `gid://gitlab/ProjectLabel/${id}`,
+  ...value,
+});
 
 const BOARD = {
   id: "gid://gitlab/Board/1",
@@ -719,20 +723,26 @@ const BOARD = {
 
 const BOARD_COLUMNS = [
   { id: "gid://gitlab/List/1", title: "Open", listType: "backlog", collapsed: false, label: null },
-  { id: "gid://gitlab/List/2", title: "Todo", listType: "label", collapsed: false, label: TODO },
+  {
+    id: "gid://gitlab/List/2",
+    title: "Todo",
+    listType: "label",
+    collapsed: false,
+    label: listLabel("10", TODO),
+  },
   {
     id: "gid://gitlab/List/3",
     title: "Development",
     listType: "label",
     collapsed: false,
-    label: DEVELOPMENT,
+    label: listLabel("11", DEVELOPMENT),
   },
   {
     id: "gid://gitlab/List/4",
     title: "Waiting for merge",
     listType: "label",
     collapsed: false,
-    label: WAITING_FOR_MERGE,
+    label: listLabel("12", WAITING_FOR_MERGE),
   },
   { id: "gid://gitlab/List/5", title: "Closed", listType: "closed", collapsed: true, label: null },
 ];
@@ -744,6 +754,7 @@ const card = (
   assignees: Person[],
   extra: { milestone?: string; dueDate?: string; notes?: number } = {},
 ) => ({
+  id: `gid://gitlab/Issue/${1000 + Number(iid)}`,
   iid,
   title,
   reference: `${PROJECT}#${iid}`,
@@ -873,6 +884,28 @@ function graphqlData(query: string, variables: Record<string, unknown>): unknown
         },
       };
     }
+    case "PaseoGitLabCreateBoard":
+      return {
+        createBoard: {
+          board: {
+            id: "gid://gitlab/Board/2",
+            name: String(variables.name ?? "New board"),
+            webUrl: `${DEMO_HOST}/${PROJECT}/-/boards/2`,
+          },
+          errors: [],
+        },
+      };
+    case "PaseoGitLabCreateBoardIssue":
+      return { createIssue: { issue: { iid: "99" }, errors: [] } };
+    case "PaseoGitLabMilestones":
+      return {
+        project: {
+          milestones: nodes([
+            { id: "gid://gitlab/Milestone/24", title: "Sprint 24", dueDate: "2026-10-02" },
+            { id: "gid://gitlab/Milestone/25", title: "Sprint 25", dueDate: "2026-10-16" },
+          ]),
+        },
+      };
     case "PaseoGitLabMergeRequestRefs":
       return {
         project: {
@@ -925,6 +958,10 @@ function operationField(name: string): string {
     PipelineCancel: "pipelineCancel",
     RunPipeline: "pipelineCreate",
     IssueMoveList: "issueMoveList",
+    UpdateBoard: "updateBoard",
+    DestroyBoard: "destroyBoard",
+    BoardListCreate: "boardListCreate",
+    DestroyBoardList: "destroyBoardList",
     Merge: "mergeRequestAccept",
     ToggleReaction: "awardEmojiToggle",
   };

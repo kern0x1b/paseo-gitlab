@@ -841,7 +841,8 @@ export const BoardColumnSchema = z.object({
   listType: z.string(),
   collapsed: z.boolean(),
   issuesCount: z.number(),
-  label: LabelSchema.nullable(),
+  /** With its id: a new issue created in the column carries the label. */
+  label: DetailLabelSchema.nullable(),
 });
 
 export type BoardColumn = z.output<typeof BoardColumnSchema>;
@@ -852,16 +853,24 @@ export const boardColumnsRpc = defineRpc({
   output: z.object({ columns: z.array(BoardColumnSchema) }),
 });
 
-/** Anyone (null), nobody (`@none`), anybody at all (`@any`), or one username. */
+/**
+ * The board's search bar. `assignee`: anyone (null), nobody (`@none`), anybody (`@any`) or a
+ * username. `author`: a username or null. `milestone`: any (null), none (`@none`), set (`@any`),
+ * started (`@started`), upcoming (`@upcoming`) or a title.
+ */
 export const BoardFiltersSchema = z.object({
   search: z.string(),
   assignee: z.string().nullable(),
   labels: z.array(z.string()),
+  author: z.string().nullable().default(null),
+  milestone: z.string().nullable().default(null),
 });
 
 export type BoardFilters = z.output<typeof BoardFiltersSchema>;
 
 export const BoardCardSchema = z.object({
+  /** Global id; a move is placed before or after another card by it. */
+  id: z.string(),
   kind: z.literal("issue"),
   projectPath: z.string(),
   iid: z.string(),
@@ -898,6 +907,59 @@ export const moveBoardCardRpc = defineRpc({
     boardId: z.string(),
     fromColumnId: z.string(),
     toColumnId: z.string(),
+    /** Where in the target column: before or after another card's global id; neither puts it on top. */
+    moveBeforeId: z.string().optional(),
+    moveAfterId: z.string().optional(),
   }),
   output: z.object({ ok: z.literal(true) }),
 });
+
+export const createBoardRpc = defineRpc({
+  name: "gitlab.board.create",
+  input: z.object({ projectPath: z.string(), name: z.string().min(1) }),
+  output: BoardSummarySchema,
+});
+
+export const updateBoardRpc = defineRpc({
+  name: "gitlab.board.update",
+  input: z.object({ boardId: z.string(), name: z.string().min(1) }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const deleteBoardRpc = defineRpc({
+  name: "gitlab.board.delete",
+  input: z.object({ boardId: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const addBoardColumnRpc = defineRpc({
+  name: "gitlab.board.column.add",
+  input: z.object({ boardId: z.string(), labelId: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const removeBoardColumnRpc = defineRpc({
+  name: "gitlab.board.column.remove",
+  input: z.object({ columnId: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const createBoardCardRpc = defineRpc({
+  name: "gitlab.board.card.create",
+  input: z.object({ projectPath: z.string(), title: z.string().min(1), labelId: z.string().nullable() }),
+  output: ItemRefSchema,
+});
+
+export const MilestoneSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  dueDate: z.string().nullable(),
+});
+
+export const milestonesRpc = defineRpc({
+  name: "gitlab.milestones",
+  input: z.object({ projectPath: z.string() }),
+  output: z.object({ milestones: z.array(MilestoneSchema) }),
+});
+
+export type Milestone = z.output<typeof MilestoneSchema>;

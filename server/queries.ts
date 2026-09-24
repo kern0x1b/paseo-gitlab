@@ -894,7 +894,7 @@ export const BOARD_COLUMNS_QUERY = `
 query PaseoGitLabBoardColumns($path: ID!, $id: BoardID!) {
   project(fullPath: $path) {
     board(id: $id) {
-      lists(first: 50) { nodes { id title listType collapsed issuesCount label { title color textColor } } }
+      lists(first: 50) { nodes { id title listType collapsed issuesCount label { id title color textColor } } }
     }
   }
 }`;
@@ -908,7 +908,7 @@ query PaseoGitLabBoardCards($id: ListID!, $first: Int!, $after: String, $filters
       count
       pageInfo { hasNextPage endCursor }
       nodes {
-        iid title reference(full: true) webUrl dueDate confidential userNotesCount
+        id iid title reference(full: true) webUrl dueDate confidential userNotesCount
         milestone { title }
         ${LABELS}
         assignees { nodes { ${PERSON} } }
@@ -918,8 +918,46 @@ query PaseoGitLabBoardCards($id: ListID!, $first: Int!, $after: String, $filters
 }`;
 
 export const MOVE_BOARD_CARD_MUTATION = `
-mutation PaseoGitLabIssueMoveList($projectPath: ID!, $iid: String!, $boardId: BoardID!, $fromListId: ID, $toListId: ID) {
-  issueMoveList(input: { projectPath: $projectPath, iid: $iid, boardId: $boardId, fromListId: $fromListId, toListId: $toListId }) { ${MUTATION_RESULT} }
+mutation PaseoGitLabIssueMoveList(
+  $projectPath: ID!, $iid: String!, $boardId: BoardID!, $fromListId: ID, $toListId: ID, $moveBeforeId: ID, $moveAfterId: ID
+) {
+  issueMoveList(input: {
+    projectPath: $projectPath, iid: $iid, boardId: $boardId, fromListId: $fromListId, toListId: $toListId,
+    moveBeforeId: $moveBeforeId, moveAfterId: $moveAfterId
+  }) { ${MUTATION_RESULT} }
+}`;
+
+export const CREATE_BOARD_MUTATION = `
+mutation PaseoGitLabCreateBoard($projectPath: ID!, $name: String!) {
+  createBoard(input: { projectPath: $projectPath, name: $name }) { board { id name webUrl } errors }
+}`;
+
+export const UPDATE_BOARD_MUTATION = `
+mutation PaseoGitLabUpdateBoard($id: BoardID!, $name: String!) {
+  updateBoard(input: { id: $id, name: $name }) { ${MUTATION_RESULT} }
+}`;
+
+export const DESTROY_BOARD_MUTATION = `
+mutation PaseoGitLabDestroyBoard($id: BoardID!) { destroyBoard(input: { id: $id }) { ${MUTATION_RESULT} } }`;
+
+export const CREATE_BOARD_LIST_MUTATION = `
+mutation PaseoGitLabBoardListCreate($boardId: BoardID!, $labelId: LabelID!) {
+  boardListCreate(input: { boardId: $boardId, labelId: $labelId }) { ${MUTATION_RESULT} }
+}`;
+
+export const DESTROY_BOARD_LIST_MUTATION = `
+mutation PaseoGitLabDestroyBoardList($listId: ListID!) { destroyBoardList(input: { listId: $listId }) { ${MUTATION_RESULT} } }`;
+
+export const CREATE_BOARD_ISSUE_MUTATION = `
+mutation PaseoGitLabCreateBoardIssue($projectPath: ID!, $title: String!, $labelIds: [LabelID!]) {
+  createIssue(input: { projectPath: $projectPath, title: $title, labelIds: $labelIds }) { issue { iid } errors }
+}`;
+
+export const MILESTONES_QUERY = `
+query PaseoGitLabMilestones($path: ID!) {
+  project(fullPath: $path) {
+    milestones(state: active, first: 100, includeAncestors: true, sort: DUE_DATE_ASC) { nodes { id title dueDate } }
+  }
 }`;
 
 export interface RawBoards {
@@ -935,7 +973,7 @@ export interface RawBoardColumns {
         listType: string;
         collapsed: boolean | null;
         issuesCount: number | null;
-        label: RawLabel | null;
+        label: (RawLabel & { id: string }) | null;
       }>;
     } | null;
   } | null;
@@ -948,6 +986,7 @@ export interface RawBoardCards {
       count: number;
       pageInfo: { hasNextPage: boolean; endCursor: string | null };
       nodes: {
+        id: string;
         iid: string;
         title: string;
         reference: string;
@@ -984,6 +1023,7 @@ export function toBoardCards(raw: RawBoardCards): {
   const issues = raw.boardList?.issues;
   return {
     cards: (issues?.nodes ?? []).map((issue) => ({
+      id: issue.id,
       kind: "issue" as const,
       projectPath: projectPathOf(issue.reference),
       iid: issue.iid,
@@ -1018,6 +1058,20 @@ export function boardFilterVariables(filters: BoardFilters): Record<string, unkn
     input.assigneeWildcardId = "ANY";
   } else if (filters.assignee) {
     input.assigneeUsername = [filters.assignee];
+  }
+  if (filters.author) {
+    input.authorUsername = filters.author;
+  }
+  const wildcard: Record<string, string> = {
+    "@none": "NONE",
+    "@any": "ANY",
+    "@started": "STARTED",
+    "@upcoming": "UPCOMING",
+  };
+  if (filters.milestone && wildcard[filters.milestone]) {
+    input.milestoneWildcardId = wildcard[filters.milestone];
+  } else if (filters.milestone) {
+    input.milestoneTitle = filters.milestone;
   }
   return Object.keys(input).length > 0 ? input : null;
 }
