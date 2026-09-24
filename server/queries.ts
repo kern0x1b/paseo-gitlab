@@ -1,4 +1,7 @@
 import type {
+  BoardCard,
+  BoardColumn,
+  BoardFilters,
   Detail,
   Discussion,
   ItemKind,
@@ -881,3 +884,140 @@ mutation PaseoGitLabRunPipeline($projectPath: ID!, $ref: String!, $mergeRequestI
     errors
   }
 }`;
+
+export const BOARDS_QUERY = `
+query PaseoGitLabBoards($path: ID!) {
+  project(fullPath: $path) { boards(first: 50) { nodes { id name webUrl } } }
+}`;
+
+export const BOARD_COLUMNS_QUERY = `
+query PaseoGitLabBoardColumns($path: ID!, $id: BoardID!) {
+  project(fullPath: $path) {
+    board(id: $id) {
+      lists(first: 50) { nodes { id title listType collapsed issuesCount label { title color textColor } } }
+    }
+  }
+}`;
+
+/** One page of a column; the list's own label is dropped from each card, as GitLab does. */
+export const BOARD_CARDS_QUERY = `
+query PaseoGitLabBoardCards($id: ListID!, $first: Int!, $after: String, $filters: BoardIssueInput) {
+  boardList(id: $id) {
+    label { title }
+    issues(first: $first, after: $after, filters: $filters) {
+      count
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        iid title reference(full: true) webUrl dueDate confidential userNotesCount
+        milestone { title }
+        ${LABELS}
+        assignees { nodes { ${PERSON} } }
+      }
+    }
+  }
+}`;
+
+export const MOVE_BOARD_CARD_MUTATION = `
+mutation PaseoGitLabIssueMoveList($projectPath: ID!, $iid: String!, $boardId: BoardID!, $fromListId: ID, $toListId: ID) {
+  issueMoveList(input: { projectPath: $projectPath, iid: $iid, boardId: $boardId, fromListId: $fromListId, toListId: $toListId }) { ${MUTATION_RESULT} }
+}`;
+
+export interface RawBoards {
+  project: { boards: Nodes<{ id: string; name: string; webUrl: string }> } | null;
+}
+
+export interface RawBoardColumns {
+  project: {
+    board: {
+      lists: Nodes<{
+        id: string;
+        title: string;
+        listType: string;
+        collapsed: boolean | null;
+        issuesCount: number | null;
+        label: RawLabel | null;
+      }>;
+    } | null;
+  } | null;
+}
+
+export interface RawBoardCards {
+  boardList: {
+    label: { title: string } | null;
+    issues: {
+      count: number;
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: {
+        iid: string;
+        title: string;
+        reference: string;
+        webUrl: string;
+        dueDate: string | null;
+        confidential: boolean | null;
+        userNotesCount: number | null;
+        milestone: { title: string } | null;
+        labels?: Nodes<RawLabel>;
+        assignees?: Nodes<Person>;
+      }[];
+    } | null;
+  } | null;
+}
+
+export function toBoardColumns(raw: RawBoardColumns): BoardColumn[] {
+  return nodes(raw.project?.board?.lists).map((list) => ({
+    id: list.id,
+    title: list.title,
+    listType: list.listType,
+    collapsed: list.collapsed ?? false,
+    issuesCount: list.issuesCount ?? 0,
+    label: list.label ?? null,
+  }));
+}
+
+export function toBoardCards(raw: RawBoardCards): {
+  cards: BoardCard[];
+  count: number;
+  endCursor: string | null;
+  hasNextPage: boolean;
+} {
+  const listLabel = raw.boardList?.label?.title ?? null;
+  const issues = raw.boardList?.issues;
+  return {
+    cards: (issues?.nodes ?? []).map((issue) => ({
+      kind: "issue" as const,
+      projectPath: projectPathOf(issue.reference),
+      iid: issue.iid,
+      reference: issue.reference,
+      title: issue.title,
+      webUrl: issue.webUrl,
+      labels: nodes(issue.labels).filter((label) => label.title !== listLabel),
+      assignees: nodes(issue.assignees),
+      milestone: issue.milestone?.title ?? null,
+      dueDate: issue.dueDate ?? null,
+      confidential: issue.confidential ?? false,
+      userNotesCount: issue.userNotesCount ?? 0,
+    })),
+    count: issues?.count ?? 0,
+    endCursor: issues?.pageInfo.endCursor ?? null,
+    hasNextPage: issues?.pageInfo.hasNextPage ?? false,
+  };
+}
+
+/** The board's search bar as GitLab's `BoardIssueInput`; empty filters send nothing. */
+export function boardFilterVariables(filters: BoardFilters): Record<string, unknown> | null {
+  const input: Record<string, unknown> = {};
+  if (filters.search.trim()) {
+    input.search = filters.search.trim();
+  }
+  if (filters.labels.length > 0) {
+    input.labelName = filters.labels;
+  }
+  if (filters.assignee === "@none") {
+    input.assigneeWildcardId = "NONE";
+  } else if (filters.assignee === "@any") {
+    input.assigneeWildcardId = "ANY";
+  } else if (filters.assignee) {
+    input.assigneeUsername = [filters.assignee];
+  }
+  return Object.keys(input).length > 0 ? input : null;
+}

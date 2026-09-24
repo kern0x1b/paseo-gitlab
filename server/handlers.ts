@@ -13,6 +13,10 @@ import type {
   PipelineRef,
   DraftNote,
   DiffScope,
+  BoardCard,
+  BoardColumn,
+  BoardFilters,
+  BoardSummary,
   Branch,
   Commit,
   MergeRequestVersion,
@@ -40,6 +44,16 @@ import {
 } from "./agent-context";
 import { readCheckout } from "./workspace";
 import {
+  BOARD_CARDS_QUERY,
+  BOARD_COLUMNS_QUERY,
+  BOARDS_QUERY,
+  boardFilterVariables,
+  MOVE_BOARD_CARD_MUTATION,
+  toBoardCards,
+  toBoardColumns,
+  type RawBoardCards,
+  type RawBoardColumns,
+  type RawBoards,
   CREATE_DIFF_NOTE_MUTATION,
   CREATE_ISSUE_MUTATION,
   MERGE_MUTATION,
@@ -94,6 +108,8 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 /** A folder with more than 1000 entries is shown in part, with a link to GitLab. */
 const MAX_TREE_PAGES = 10;
 const COMMITS_PER_PAGE = 40;
+/** Cards per column page; GitLab's own board loads 20 at a time too. */
+const BOARD_PAGE_SIZE = 20;
 
 interface RawCommit {
   id: string;
@@ -823,6 +839,68 @@ export function createHandlers(deps: AuthDeps) {
         deps.fetch,
       );
       return { commits: raw.map(toCommit) };
+    },
+
+    async boards(input: { projectPath: string }): Promise<{ boards: BoardSummary[] }> {
+      const connection = await requireConnection(deps);
+      const raw = await graphql<RawBoards>(connection, BOARDS_QUERY, { path: input.projectPath }, deps.fetch);
+      return {
+        boards: (raw.project?.boards?.nodes ?? []).map(({ id, name, webUrl }) => ({ id, name, webUrl })),
+      };
+    },
+
+    async boardColumns(input: { projectPath: string; boardId: string }): Promise<{ columns: BoardColumn[] }> {
+      const connection = await requireConnection(deps);
+      const raw = await graphql<RawBoardColumns>(
+        connection,
+        BOARD_COLUMNS_QUERY,
+        { path: input.projectPath, id: input.boardId },
+        deps.fetch,
+      );
+      return { columns: toBoardColumns(raw) };
+    },
+
+    async boardCards(input: {
+      columnId: string;
+      after: string | null;
+      filters: BoardFilters;
+    }): Promise<{ cards: BoardCard[]; count: number; endCursor: string | null; hasNextPage: boolean }> {
+      const connection = await requireConnection(deps);
+      const raw = await graphql<RawBoardCards>(
+        connection,
+        BOARD_CARDS_QUERY,
+        {
+          id: input.columnId,
+          first: BOARD_PAGE_SIZE,
+          after: input.after,
+          filters: boardFilterVariables(input.filters),
+        },
+        deps.fetch,
+      );
+      return toBoardCards(raw);
+    },
+
+    async moveBoardCard(input: {
+      projectPath: string;
+      iid: string;
+      boardId: string;
+      fromColumnId: string;
+      toColumnId: string;
+    }): Promise<{ ok: true }> {
+      const connection = await requireConnection(deps);
+      return mutate(
+        connection,
+        deps,
+        MOVE_BOARD_CARD_MUTATION,
+        {
+          projectPath: input.projectPath,
+          iid: input.iid,
+          boardId: input.boardId,
+          fromListId: input.fromColumnId,
+          toListId: input.toColumnId,
+        },
+        "move the issue",
+      );
     },
 
     async repoTree(input: {

@@ -707,6 +707,88 @@ function pipeline(iid: string) {
   };
 }
 
+const TODO = label("Todo", "#428bca");
+const DEVELOPMENT = label("Development", "#2d9d78");
+const WAITING_FOR_MERGE = label("Waiting for merge", "#d4a72c");
+
+const BOARD = {
+  id: "gid://gitlab/Board/1",
+  name: "Development",
+  webUrl: `${DEMO_HOST}/${PROJECT}/-/boards/1`,
+};
+
+const BOARD_COLUMNS = [
+  { id: "gid://gitlab/List/1", title: "Open", listType: "backlog", collapsed: false, label: null },
+  { id: "gid://gitlab/List/2", title: "Todo", listType: "label", collapsed: false, label: TODO },
+  {
+    id: "gid://gitlab/List/3",
+    title: "Development",
+    listType: "label",
+    collapsed: false,
+    label: DEVELOPMENT,
+  },
+  {
+    id: "gid://gitlab/List/4",
+    title: "Waiting for merge",
+    listType: "label",
+    collapsed: false,
+    label: WAITING_FOR_MERGE,
+  },
+  { id: "gid://gitlab/List/5", title: "Closed", listType: "closed", collapsed: true, label: null },
+];
+
+const card = (
+  iid: string,
+  title: string,
+  labels: ReturnType<typeof label>[],
+  assignees: Person[],
+  extra: { milestone?: string; dueDate?: string; notes?: number } = {},
+) => ({
+  iid,
+  title,
+  reference: `${PROJECT}#${iid}`,
+  webUrl: `${DEMO_HOST}/${PROJECT}/-/issues/${iid}`,
+  dueDate: extra.dueDate ?? null,
+  confidential: false,
+  userNotesCount: extra.notes ?? 0,
+  milestone: extra.milestone ? { title: extra.milestone } : null,
+  labels: nodes(labels),
+  assignees: nodes(assignees),
+});
+
+const BOARD_CARDS: Record<string, ReturnType<typeof card>[]> = {
+  "gid://gitlab/List/1": [
+    card("97", "Export the audit log as CSV", [ENHANCEMENT], []),
+    card("95", "Onboarding checklist for new workspaces", [FRONTEND], [nadia], { milestone: "Sprint 25" }),
+  ],
+  "gid://gitlab/List/2": [
+    card("91", "Add keyboard shortcuts to the editor", [TODO, ENHANCEMENT], [nadia], {
+      milestone: "Sprint 24",
+    }),
+    card("93", "Paginate the activity feed", [TODO, BACKEND, PRIORITY], [sam], {
+      milestone: "Sprint 24",
+      dueDate: "2026-10-02",
+    }),
+  ],
+  "gid://gitlab/List/3": [
+    card("88", "Search returns stale results after an edit", [DEVELOPMENT, BUG], [you], {
+      milestone: "Sprint 24",
+      notes: 2,
+    }),
+    card("90", "Rate limit the public API", [DEVELOPMENT, BACKEND], [you], {
+      milestone: "Sprint 24",
+      notes: 3,
+    }),
+  ],
+  "gid://gitlab/List/4": [
+    card("86", "Dark mode design tokens", [WAITING_FOR_MERGE, FRONTEND], [mira], {
+      milestone: "Sprint 24",
+      notes: 5,
+    }),
+  ],
+  "gid://gitlab/List/5": [card("80", "Fix flaky checkout test", [BUG], [you], { milestone: "Sprint 23" })],
+};
+
 const JOB_TRACE =
   '\u001b[0KRunning with gitlab-runner 17.4.0\n\u001b[0K\u001b[32;1mPreparing the "docker" executor\u001b[0;m\n$ pnpm test\n\n  api/rateLimit\n    \u001b[32m✓\u001b[0m rejects over the limit (7 ms)\n    \u001b[32m✓\u001b[0m sets Retry-After (3 ms)\n  api/checkout\n    \u001b[31m✗\u001b[0m completes a paid order (1200 ms)\n\n  \u001b[31m● api/checkout › completes a paid order\u001b[0m\n\n    Timeout waiting for payment mock to be ready.\n\n      at Object.<anonymous> (test/checkout.test.ts:42:11)\n\n\u001b[31;1mTests: 1 failed, 2 passed, 3 total\u001b[0;m\n\u001b[0K\u001b[31;1mERROR: Job failed: exit code 1\u001b[0;m\n';
 
@@ -758,6 +840,39 @@ function graphqlData(query: string, variables: Record<string, unknown>): unknown
           ),
         },
       };
+    case "PaseoGitLabBoards":
+      return { project: { boards: nodes([BOARD]) } };
+    case "PaseoGitLabBoardColumns":
+      return {
+        project: {
+          board: {
+            lists: nodes(
+              BOARD_COLUMNS.map((column) => ({
+                ...column,
+                issuesCount: (BOARD_CARDS[column.id] ?? []).length,
+              })),
+            ),
+          },
+        },
+      };
+    case "PaseoGitLabBoardCards": {
+      const id = String(variables.id ?? "");
+      const column = BOARD_COLUMNS.find((entry) => entry.id === id);
+      const filters = (variables.filters ?? {}) as { search?: string; labelName?: string[] };
+      const cards = (BOARD_CARDS[id] ?? []).filter(
+        (entry) =>
+          (!filters.search || entry.title.toLowerCase().includes(filters.search.toLowerCase())) &&
+          (filters.labelName ?? []).every((title) =>
+            entry.labels.nodes.some((candidate) => candidate.title === title),
+          ),
+      );
+      return {
+        boardList: {
+          label: column?.label ? { title: column.label.title } : null,
+          issues: { count: cards.length, pageInfo: { hasNextPage: false, endCursor: null }, nodes: cards },
+        },
+      };
+    }
     case "PaseoGitLabMergeRequestRefs":
       return {
         project: {
@@ -809,6 +924,7 @@ function operationField(name: string): string {
     PipelineRetry: "pipelineRetry",
     PipelineCancel: "pipelineCancel",
     RunPipeline: "pipelineCreate",
+    IssueMoveList: "issueMoveList",
     Merge: "mergeRequestAccept",
     ToggleReaction: "awardEmojiToggle",
   };

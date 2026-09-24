@@ -32,6 +32,10 @@ import {
   clientLogRpc,
   accountsRpc,
   aheadBehindRpc,
+  boardCardsRpc,
+  boardColumnsRpc,
+  boardsRpc,
+  moveBoardCardRpc,
   branchesRpc,
   commitsRpc,
   createBranchRpc,
@@ -101,6 +105,10 @@ export default function contribute(server: PluginServerContext) {
   handle(scopedDiffsRpc, (input) => handlers.scopedDiffs(input));
   handle(fileLinesRpc, (input) => handlers.fileLines(input));
   handle(repoTreeRpc, (input) => handlers.repoTree(input));
+  handle(boardsRpc, (input) => handlers.boards(input));
+  handle(boardColumnsRpc, (input) => handlers.boardColumns(input));
+  handle(boardCardsRpc, (input) => handlers.boardCards(input));
+  handle(moveBoardCardRpc, (input) => handlers.moveBoardCard(input));
   handle(refCommitsRpc, (input) => handlers.refCommits(input));
   handle(branchesRpc, (input) => handlers.branches(input));
   handle(aheadBehindRpc, (input) => handlers.aheadBehind(input));

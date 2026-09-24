@@ -822,3 +822,82 @@ export const accountsRpc = defineRpc({
     forDirectory: z.string().nullable(),
   }),
 });
+
+export const BoardSummarySchema = z.object({ id: z.string(), name: z.string(), webUrl: z.string() });
+
+export type BoardSummary = z.output<typeof BoardSummarySchema>;
+
+export const boardsRpc = defineRpc({
+  name: "gitlab.boards",
+  input: z.object({ projectPath: z.string() }),
+  output: z.object({ boards: z.array(BoardSummarySchema) }),
+});
+
+/** A column of an issue board: open issues without a list label, one label, or closed issues. */
+export const BoardColumnSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  /** GitLab's `listType`: `backlog` (Open), `label`, `closed`; EE adds assignee and milestone lists. */
+  listType: z.string(),
+  collapsed: z.boolean(),
+  issuesCount: z.number(),
+  label: LabelSchema.nullable(),
+});
+
+export type BoardColumn = z.output<typeof BoardColumnSchema>;
+
+export const boardColumnsRpc = defineRpc({
+  name: "gitlab.board.columns",
+  input: z.object({ projectPath: z.string(), boardId: z.string() }),
+  output: z.object({ columns: z.array(BoardColumnSchema) }),
+});
+
+/** Anyone (null), nobody (`@none`), anybody at all (`@any`), or one username. */
+export const BoardFiltersSchema = z.object({
+  search: z.string(),
+  assignee: z.string().nullable(),
+  labels: z.array(z.string()),
+});
+
+export type BoardFilters = z.output<typeof BoardFiltersSchema>;
+
+export const BoardCardSchema = z.object({
+  kind: z.literal("issue"),
+  projectPath: z.string(),
+  iid: z.string(),
+  reference: z.string(),
+  title: z.string(),
+  webUrl: z.string(),
+  labels: z.array(LabelSchema),
+  assignees: z.array(PersonSchema),
+  milestone: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  confidential: z.boolean(),
+  userNotesCount: z.number(),
+});
+
+export type BoardCard = z.output<typeof BoardCardSchema>;
+
+export const boardCardsRpc = defineRpc({
+  name: "gitlab.board.cards",
+  input: z.object({ columnId: z.string(), after: z.string().nullable(), filters: BoardFiltersSchema }),
+  output: z.object({
+    cards: z.array(BoardCardSchema),
+    /** How many issues match the filters, across every page. */
+    count: z.number(),
+    endCursor: z.string().nullable(),
+    hasNextPage: z.boolean(),
+  }),
+});
+
+export const moveBoardCardRpc = defineRpc({
+  name: "gitlab.board.move",
+  input: z.object({
+    projectPath: z.string(),
+    iid: z.string(),
+    boardId: z.string(),
+    fromColumnId: z.string(),
+    toColumnId: z.string(),
+  }),
+  output: z.object({ ok: z.literal(true) }),
+});
