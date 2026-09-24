@@ -349,3 +349,35 @@ describe("role filters", () => {
     assert.equal(defaultRoleFilter([item("a", ["author"])]), "all");
   });
 });
+
+describe("label filters", () => {
+  const label = (title: string) => ({ title, color: "#000", textColor: "#fff" });
+  const item = (reference: string, labels: string[]) =>
+    ({ reference, labels: labels.map(label) }) as unknown as import("../shared/contract").ListItem;
+  const items = [item("a", ["bug", "backend"]), item("b", ["bug"]), item("c", ["frontend"])];
+
+  it("lists the labels on a list, most used first", async () => {
+    const { labelsIn } = await import("../client/ui/filters");
+    assert.deepEqual(
+      labelsIn(items).map((entry) => [entry.label.title, entry.count]),
+      [
+        ["bug", 2],
+        ["backend", 1],
+        ["frontend", 1],
+      ],
+    );
+  });
+
+  it("keeps the items that carry every selected label", async () => {
+    const { byLabels } = await import("../client/ui/filters");
+    assert.deepEqual(
+      byLabels(items, ["bug"]).map((entry) => entry.reference),
+      ["a", "b"],
+    );
+    assert.deepEqual(
+      byLabels(items, ["bug", "backend"]).map((entry) => entry.reference),
+      ["a"],
+    );
+    assert.equal(byLabels(items, []).length, 3);
+  });
+});

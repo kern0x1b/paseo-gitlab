@@ -1,7 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { useRpc } from "../account";
-import { useToast } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import React, { Fragment, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -11,10 +11,11 @@ import {
   type ListItem,
   type Lists,
   type Person,
+  type Label,
   type Todo,
 } from "../../shared/contract";
 import { Avatar, Badge, errorText, IconButton, Labels, PipelineDot } from "./common";
-import { byRole, defaultRoleFilter, ROLE_FILTERS, type RoleFilter } from "./filters";
+import { byLabels, byRole, defaultRoleFilter, labelsIn, ROLE_FILTERS, type RoleFilter } from "./filters";
 import { humanize, mergeStatusLabel, shortReference, timeAgo } from "./format";
 import { LISTS_KEY } from "./queries";
 import { SearchPanel } from "./search";
@@ -210,6 +211,145 @@ function Todos({ todos, onOpen, ui }: { todos: Todo[]; onOpen: (ref: ItemRef) =>
   );
 }
 
+type LabelTab = "issues" | "mrs" | "review";
+type LabelFilters = Record<LabelTab, string[]>;
+
+const LABEL_FILTERS_KEY = "paseo-gitlab:label-filters";
+
+function storedLabelFilters(): LabelFilters {
+  const empty: LabelFilters = { issues: [], mrs: [], review: [] };
+  try {
+    const raw = JSON.parse(
+      globalThis.localStorage?.getItem(LABEL_FILTERS_KEY) ?? "{}",
+    ) as Partial<LabelFilters>;
+    return {
+      issues: Array.isArray(raw.issues) ? raw.issues : [],
+      mrs: Array.isArray(raw.mrs) ? raw.mrs : [],
+      review: Array.isArray(raw.review) ? raw.review : [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function LabelChip({ label, onRemove, styles }: { label: Label; onRemove?: () => void; styles: Styles }) {
+  return (
+    <Pressable
+      accessibilityRole={onRemove ? "button" : undefined}
+      accessibilityLabel={onRemove ? `Stop filtering by ${label.title}` : label.title}
+      disabled={!onRemove}
+      onPress={onRemove}
+      style={[styles.badge, styles.row, { gap: 4, backgroundColor: label.color }]}
+    >
+      <Text style={[styles.badgeLabel, { color: label.textColor }]} numberOfLines={1}>
+        {label.title}
+      </Text>
+      {onRemove ? <Icon name="X" size={11} color={label.textColor} /> : null}
+    </Pressable>
+  );
+}
+
+/** "Labels" and the chosen ones: the list keeps the items that carry every chosen label. */
+function LabelFilter({
+  available,
+  selected,
+  onChange,
+  ui,
+}: {
+  available: { label: Label; count: number }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  ui: Ui;
+}) {
+  const { styles, theme } = ui;
+  const [open, setOpen] = useState(false);
+  const toggle = (title: string) =>
+    onChange(selected.includes(title) ? selected.filter((entry) => entry !== title) : [...selected, title]);
+  const labelOf = (title: string) =>
+    available.find((entry) => entry.label.title === title)?.label ?? {
+      title,
+      color: theme.colors.surface2,
+      textColor: theme.colors.foreground,
+    };
+  return (
+    <View style={[styles.row, { flexWrap: "wrap" }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Filter by labels"
+        onPress={() => setOpen(true)}
+        style={[
+          styles.badge,
+          styles.row,
+          { gap: 4 },
+          selected.length > 0 ? { borderColor: theme.colors.accent } : null,
+        ]}
+      >
+        <Icon name="Tag" size={11} color={theme.colors.foregroundMuted} />
+        <Text style={styles.badgeLabel}>{selected.length > 0 ? `Labels ${selected.length}` : "Labels"}</Text>
+      </Pressable>
+      {selected.map((title) => (
+        <LabelChip key={title} label={labelOf(title)} onRemove={() => toggle(title)} styles={styles} />
+      ))}
+      <Modal title="Filter by labels" open={open} onOpenChange={setOpen}>
+        <Modal.Content>
+          <Text style={styles.small}>Shows the items that carry every label you pick.</Text>
+          {available.map(({ label, count }) => {
+            const checked = selected.includes(label.title);
+            return (
+              <Pressable
+                key={label.title}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked }}
+                onPress={() => toggle(label.title)}
+                style={({ pressed }) => [
+                  styles.listRow,
+                  styles.row,
+                  { gap: 8 },
+                  pressed ? styles.listRowPressed : null,
+                ]}
+              >
+                <View style={{ flex: 1, flexDirection: "row" }}>
+                  <LabelChip label={label} styles={styles} />
+                </View>
+                <Text style={styles.small}>{count}</Text>
+                <View
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: 4,
+                    borderWidth: 1.5,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderColor: checked ? theme.colors.accent : theme.colors.foregroundMuted,
+                    backgroundColor: checked ? theme.colors.accent : "transparent",
+                  }}
+                >
+                  {checked ? <Icon name="Check" size={11} color={theme.colors.accentForeground} /> : null}
+                </View>
+              </Pressable>
+            );
+          })}
+          <View style={styles.row}>
+            <View style={styles.spacer} />
+            {selected.length > 0 ? (
+              <Pressable accessibilityRole="button" onPress={() => onChange([])} style={styles.button}>
+                <Text style={styles.buttonLabel}>Clear</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setOpen(false)}
+              style={[styles.button, styles.buttonPrimary]}
+            >
+              <Text style={styles.buttonLabelPrimary}>Done</Text>
+            </Pressable>
+          </View>
+        </Modal.Content>
+      </Modal>
+    </View>
+  );
+}
+
 const TABS: { id: TabId; label: string; count: (lists: Lists) => number; empty: string }[] = [
   { id: "todos", label: "To-Do", count: (lists) => lists.todos.length, empty: "No pending to-dos." },
   {
@@ -252,19 +392,45 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
     issues: defaultRoleFilter(lists.issues),
     mrs: defaultRoleFilter(lists.mergeRequests),
   }));
+  const [labelFilters, setLabelFiltersState] = useState<LabelFilters>(storedLabelFilters);
   const filterable = tab === "issues" || tab === "mrs" ? tab : null;
+  const labelTab: LabelTab | null = tab === "issues" || tab === "mrs" || tab === "review" ? tab : null;
   const unfiltered =
     tab === "issues" ? lists.issues : tab === "mrs" ? lists.mergeRequests : lists.reviewMergeRequests;
-  const items = filterable ? byRole(unfiltered, roleFilter[filterable]) : unfiltered;
+  // A saved label no item carries any more is ignored, so it cannot empty the list unnoticed.
+  const present = labelsIn(unfiltered);
+  const selectedLabels = labelTab
+    ? labelFilters[labelTab].filter((title) => present.some((entry) => entry.label.title === title))
+    : [];
+  const labelled = byLabels(unfiltered, selectedLabels);
+  const roleFiltered = filterable ? byRole(unfiltered, roleFilter[filterable]) : unfiltered;
+  const items = filterable ? byRole(labelled, roleFilter[filterable]) : labelled;
+  const setLabelFilter = (next: string[]) => {
+    if (!labelTab) {
+      return;
+    }
+    setLabelFiltersState((current) => {
+      const updated = { ...current, [labelTab]: next };
+      try {
+        globalThis.localStorage?.setItem(LABEL_FILTERS_KEY, JSON.stringify(updated));
+      } catch {
+        // No storage: the filter lasts until the window closes.
+      }
+      return updated;
+    });
+  };
   const empty = tab === "todos" ? lists.todos.length === 0 : items.length === 0;
   const defaultProject =
     lists.mergeRequests[0]?.projectPath ??
     lists.issues[0]?.projectPath ??
     lists.reviewMergeRequests[0]?.projectPath ??
     "";
-  const emptyText = filterable
-    ? (ROLE_FILTERS.find((filter) => filter.id === roleFilter[filterable])?.empty ?? current.empty)
-    : current.empty;
+  const emptyText =
+    selectedLabels.length > 0 && unfiltered.length > 0
+      ? "Nothing here carries every selected label."
+      : filterable
+        ? (ROLE_FILTERS.find((filter) => filter.id === roleFilter[filterable])?.empty ?? current.empty)
+        : current.empty;
 
   return (
     <View style={{ gap: 12 }}>
@@ -302,12 +468,20 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
                 <Text
                   style={[styles.badgeLabel, active ? { color: ui.theme.colors.accentForeground } : null]}
                 >
-                  {filter.label} {byRole(unfiltered, filter.id).length}
+                  {filter.label} {byRole(labelled, filter.id).length}
                 </Text>
               </Pressable>
             );
           })}
         </View>
+      ) : null}
+      {labelTab && present.length > 0 ? (
+        <LabelFilter
+          available={labelsIn(roleFiltered)}
+          selected={selectedLabels}
+          onChange={setLabelFilter}
+          ui={ui}
+        />
       ) : null}
       {tab === "search" ? <SearchPanel defaultProject={defaultProject} onOpen={onOpen} ui={ui} /> : null}
       {tab === "search" ? null : (

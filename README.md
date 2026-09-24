@@ -93,6 +93,9 @@ Five tabs, each with a count:
 Every row shows the reference, age, comment count, merge status, labels, and the
 assignees, reviewers and author with their avatars.
 
+On Issues, MRs and Review, **Labels** filters the list down to the items that carry every label you
+pick, from the labels actually present in it. The choice is remembered per tab.
+
 | To-Do | Issues | Merge requests |
 |-------|--------|----------------|
 | ![To-Do](docs/screenshots/todo.png) | ![Issues](docs/screenshots/issues.png) | ![Merge requests](docs/screenshots/merge-requests.png) |

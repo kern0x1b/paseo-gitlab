@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A label filter on the Issues, MRs and Review tabs: pick any labels present in the list and it keeps
+  the items that carry every one of them; the choice is remembered per tab
+
 ## [0.1.0] - 2026-09-23
 
 ### Added
