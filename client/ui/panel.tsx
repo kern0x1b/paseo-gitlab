@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import React, { useState } from "react";
 import { Text, View } from "react-native";
 import { authStatusRpc, listsRpc, type ItemRef, type Job, type PipelineRef } from "../../shared/contract";
-import { openDiff, openGitLabSettings, openRepository } from "../plugin-client";
+import { openBoard, openDiff, openGitLabSettings, openRepository } from "../plugin-client";
 import { Button, Centered, errorText, HostContext, IconButton } from "./common";
 import { ChangesView } from "./changes";
 import { CreateView, type CreateTarget } from "./create";
@@ -172,6 +172,13 @@ function GitLabPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
                 },
               })
             }
+            theme={theme}
+            styles={styles}
+          />
+          <IconButton
+            icon="Kanban"
+            label="Open the issue board"
+            onPress={() => openBoard(workspaceId)}
             theme={theme}
             styles={styles}
           />

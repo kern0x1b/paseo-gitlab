@@ -20,6 +20,12 @@ export const SETTINGS_ID = "gitlab";
 export const PANEL_ID = "gitlab";
 export const DIFF_PANEL_ID = "gitlab-diff";
 export const REPO_PANEL_ID = "gitlab-repo";
+export const BOARD_PANEL_ID = "gitlab-board";
+
+/** The project's issue board, in the workspace's main area. */
+export function openBoard(workspaceId: string): void {
+  current?.openPanel(BOARD_PANEL_ID, { workspaceId, location: "workspace" });
+}
 
 /** The project's files, commits and branches, in the workspace's main area. */
 export function openRepository(workspaceId: string): void {

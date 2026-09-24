@@ -1,6 +1,14 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { startHeaderButtons } from "./client/header-buttons";
-import { DIFF_PANEL_ID, PANEL_ID, REPO_PANEL_ID, SETTINGS_ID, setPluginClient } from "./client/plugin-client";
+import {
+  BOARD_PANEL_ID,
+  DIFF_PANEL_ID,
+  PANEL_ID,
+  REPO_PANEL_ID,
+  SETTINGS_ID,
+  setPluginClient,
+} from "./client/plugin-client";
+import { BoardPanel } from "./client/ui/board-panel";
 import { DiffPanel } from "./client/ui/diff-panel";
 import { GitLabPanel } from "./client/ui/panel";
 import { RepositoryPanel } from "./client/ui/repo-panel";
@@ -37,6 +45,14 @@ export default function contribute(client: PluginClientContext) {
       locations: ["workspace"],
       Component: RepositoryPanel,
     }),
+    client.addWorkspacePanel({
+      id: BOARD_PANEL_ID,
+      title: "Issue board",
+      icon: "Kanban",
+      context: "workspace",
+      locations: ["workspace"],
+      Component: BoardPanel,
+    }),
     client.addSettingsScreen({ id: SETTINGS_ID, title: "GitLab", icon: ICON, Component: GitLabSettings }),
     client.addCommandCenterItem({
       id: "open-gitlab",
@@ -53,6 +69,14 @@ export default function contribute(client: PluginClientContext) {
       keywords: ["gitlab", "repository", "files", "branches", "commits"],
       context: "workspace",
       onSelect: (context) => context.openPanel(REPO_PANEL_ID, { location: "workspace" }),
+    }),
+    client.addCommandCenterItem({
+      id: "open-gitlab-board",
+      title: "GitLab issue board",
+      icon: "Kanban",
+      keywords: ["gitlab", "board", "issues", "kanban", "todo"],
+      context: "workspace",
+      onSelect: (context) => context.openPanel(BOARD_PANEL_ID, { location: "workspace" }),
     }),
     startHeaderButtons(client, ICON),
     client.addAttachmentSource({

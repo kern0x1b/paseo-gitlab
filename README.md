@@ -179,6 +179,21 @@ hard to undo:
   branch to an agent to merge the target in, resolve, and push — GitLab has no API
   to resolve conflicts itself.
 
+## Issue board
+
+The project's issue boards in the main area, the way GitLab shows them. Open it from the board icon
+in the panel header, the **+** menu of the workspace tabs, or Cmd+K **GitLab issue board**.
+
+- Pick any board of the project; the choice is remembered per project.
+- Every column with its count: Open, one per label list, and Closed, folded by default as in GitLab.
+  Columns scroll on their own and load 20 cards at a time.
+- Cards show the title, labels (without the column's own), the milestone, the due date (red when
+  overdue), the comment count and the assignees.
+- Search and filter by assignee (me, nobody, anybody, or a person) and by labels; the filters are
+  remembered per board.
+- Click a card to open the issue in a side drawer with everything the panel's detail view offers;
+  **Move to list** on a card moves it the way dragging does in GitLab.
+
 ## Pipelines and jobs
 
 From an MR or its pipeline status, open the pipeline: its stages and jobs, each

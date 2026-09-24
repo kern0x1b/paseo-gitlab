@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- An **Issue board** in the main area, as GitLab's issue boards show it: pick a board, see its
+  columns with counts and cards (labels, milestone, due date, assignees), search and filter by
+  assignee and labels, fold columns, open an issue in a side drawer, and move a card to another list
 - A label filter on the Issues, MRs and Review tabs: pick any labels present in the list and it keeps
   the items that carry every one of them; the choice is remembered per tab
 
