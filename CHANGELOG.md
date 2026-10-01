@@ -5,7 +5,13 @@ All notable changes to this plugin are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-10-02
+
+### Added
+
+- Support for the **Paseo Fleet Protocol v1** (`paseo-fleet/v1`) event envelope.
+- Multi-instance disambiguation with `instance` (`host`), `scope` (`projectPath`), and fully qualified `urn:gitlab:<host>:<project>:<type>:<id>`.
+- Deterministic `reply_action` mapping directly to `gitlab_create_mr_note` or `gitlab_create_issue_note` with project and item coordinates.
 
 ## [1.0.0] - 2026-09-25
 

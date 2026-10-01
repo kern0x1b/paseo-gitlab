@@ -1,7 +1,7 @@
 {
   "name": "paseo-gitlab",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A mini GitLab in Paseo: UI explorer plugin, CLI, real-time inbound event router, and MCP server for AI fleets.",
   "type": "module",
   "main": "src/index.js",
