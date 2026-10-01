@@ -5,7 +5,7 @@
 # GitLab for Paseo
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A522-3c873a.svg)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A520-3c873a.svg)](https://nodejs.org)
 [![Tests: node --test](https://img.shields.io/badge/tests-node%20--test-brightgreen.svg)](test)
 [![Code style: Prettier](https://img.shields.io/badge/code%20style-prettier-ff69b4.svg)](https://prettier.io)
 
@@ -35,6 +35,7 @@ nor a browser tab.
 - [Several GitLab accounts](#several-gitlab-accounts)
 - [Security](#security)
 - [How it is built](#how-it-is-built)
+- [CLI, Event Router & MCP Server](#cli-event-router--mcp-server)
 - [Development](#development)
 
 ---
@@ -44,7 +45,7 @@ nor a browser tab.
 The plugin is a directory, not a published package. Point Paseo at a checkout:
 
 ```bash
-git clone <this repo> paseo-gitlab
+git clone https://github.com/kern0x1b/paseo-gitlab.git
 cd paseo-gitlab
 npm install            # dev-time types only; nothing ships to the client
 paseo plugin add ./paseo-gitlab
@@ -82,13 +83,13 @@ you — review requests, to-dos, and a mark when one of your MRs has a failed pi
 
 Five tabs, each with a count:
 
-| Tab | Shows |
-|-----|-------|
-| **To-Do** | Your pending GitLab to-dos, each opening its issue or MR; mark done in place. |
-| **Issues** | Issues you author or are assigned, with a role filter (Assigned / Created / All). |
-| **MRs** | Your merge requests, same role filter, with pipeline status, reviewers and labels. |
-| **Review** | Merge requests waiting for **your** review. |
-| **Search** | A query builder over issues or MRs, with saved queries. |
+| Tab        | Shows                                                                              |
+| ---------- | ---------------------------------------------------------------------------------- |
+| **To-Do**  | Your pending GitLab to-dos, each opening its issue or MR; mark done in place.      |
+| **Issues** | Issues you author or are assigned, with a role filter (Assigned / Created / All).  |
+| **MRs**    | Your merge requests, same role filter, with pipeline status, reviewers and labels. |
+| **Review** | Merge requests waiting for **your** review.                                        |
+| **Search** | A query builder over issues or MRs, with saved queries.                            |
 
 Every row shows the reference, age, comment count, merge status, labels, and the
 assignees, reviewers and author with their avatars.
@@ -96,12 +97,12 @@ assignees, reviewers and author with their avatars.
 On Issues, MRs and Review, **Labels** filters the list down to the items that carry every label you
 pick, from the labels actually present in it. The choice is remembered per tab.
 
-| To-Do | Issues | Merge requests |
-|-------|--------|----------------|
+| To-Do                               | Issues                                 | Merge requests                                         |
+| ----------------------------------- | -------------------------------------- | ------------------------------------------------------ |
 | ![To-Do](docs/screenshots/todo.png) | ![Issues](docs/screenshots/issues.png) | ![Merge requests](docs/screenshots/merge-requests.png) |
 
-| Review requests | Search with saved queries |
-|-----------------|---------------------------|
+| Review requests                        | Search with saved queries              |
+| -------------------------------------- | -------------------------------------- |
 | ![Review](docs/screenshots/review.png) | ![Search](docs/screenshots/search.png) |
 
 ## Issue and merge-request detail
@@ -151,7 +152,7 @@ and write a comment. A comment can:
 
 - go into a **local review** that stacks up until you submit it,
 - become a **suggested change** (when you can push to the source branch),
-- or be sent to an agent **right now** with *Ask agent now*.
+- or be sent to an agent **right now** with _Ask agent now_.
 
 ![Selecting lines and choosing where a comment goes](docs/screenshots/code-comment.png)
 
@@ -271,6 +272,68 @@ limit, list queries are split and run in parallel) and written over a mix of
 GraphQL mutations and **REST** (diffs, drafts, suggestions, pipelines, repository
 tree, branches, uploads). Every RPC output is validated against its Zod schema, so
 a malformed response fails loudly instead of reaching the UI.
+
+## CLI, Event Router & MCP Server
+
+In addition to the Paseo UI plugin, this repository contains the standalone CLI (`gitlab`), real-time event router daemon (`gitlab daemon`), and stdio Model Context Protocol (MCP) server for AI fleets:
+
+```
+bin/gitlab.js        unified CLI entry point (gitlab mr, issue, todo, daemon, mcp)
+src/mcp.js           MCP server exposing GitLab tools and daemon controls to agents
+src/daemon.js        background event router with working-hours gating and smart polling
+src/subscriptions.js subscription registry with specificity routing for AI fleets
+src/dispatcher.js    delivers events to Paseo agents via CLI or native messaging
+src/gitlab-client.js lightweight REST/GraphQL client reading token from OS keychain
+```
+
+### Commands
+
+```bash
+# Run CLI
+./bin/gitlab.js whoami
+./bin/gitlab.js todos
+./bin/gitlab.js mr 101
+
+# Run daemon (routes GitLab events to subscribed Paseo agents)
+./bin/gitlab.js daemon
+
+# Run MCP server
+./bin/gitlab.js mcp
+```
+
+### Configuration & Environment Variables
+
+The CLI and daemon read configuration from `~/.config/gitlab-router/config.json`, or environment variables:
+
+| Variable            | Description                         | Default                                                |
+| ------------------- | ----------------------------------- | ------------------------------------------------------ |
+| `GITLAB_HOST`       | GitLab instance origin              | `https://gitlab.com`                                   |
+| `GITLAB_TOKEN`      | Personal Access Token (`api` scope) | Read from OS Keychain (macOS `paseo-gitlab`) or config |
+| `GITLAB_PROJECT_ID` | Default numeric project ID          | Optional                                               |
+| `PASEO_BIN`         | Path to Paseo CLI binary            | `paseo`                                                |
+
+You can also view or set configuration directly via CLI:
+
+```bash
+./bin/gitlab.js config host="https://gitlab.example.com"
+./bin/gitlab.js config token="glpat-..."
+./bin/gitlab.js config defaultProjectId=123
+```
+
+### MCP Server Setup
+
+To expose GitLab tools and fleet routing to Claude Desktop, Paseo, Antigravity, or other MCP clients, add this to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "gitlab": {
+      "command": "node",
+      "args": ["/absolute/path/to/paseo-gitlab/bin/gitlab.js", "mcp"]
+    }
+  }
+}
+```
 
 ## Development
 

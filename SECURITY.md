@@ -14,11 +14,11 @@ You can also use
 
 ## What to expect
 
-| Stage | Target |
-|---|---|
-| Acknowledgement of your report | 3 business days |
-| Initial assessment and severity | 10 business days |
-| Fix released, or a dated plan if the fix takes longer | 90 days |
+| Stage                                                 | Target           |
+| ----------------------------------------------------- | ---------------- |
+| Acknowledgement of your report                        | 3 business days  |
+| Initial assessment and severity                       | 10 business days |
+| Fix released, or a dated plan if the fix takes longer | 90 days          |
 
 You will be told when the fix ships. If you want credit in the release notes, say so in your
 report; reports are otherwise handled without attribution.
@@ -42,9 +42,9 @@ If you are unsure whether something is in scope, ask before testing.
 ## Supported versions
 
 | Version | Supported |
-|---------|-----------|
-| 0.1.x   | Yes       |
-| < 0.1   | No        |
+| ------- | --------- |
+| 1.x     | Yes       |
+| < 1.0   | No        |
 
 Fixes ship in the current release line only.
 

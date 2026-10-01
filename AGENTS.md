@@ -7,20 +7,23 @@ the exact commands to verify a change.
 ## What this is
 
 A [Paseo](https://getpaseo.com) plugin that puts GitLab — to-dos, issues, merge
-requests, review, pipelines, the repository — inside the editor, talking to GitLab's
-API directly with a personal access token. See [README.md](README.md) for the
-user-facing feature tour.
+requests, review, pipelines, the repository, and issue boards — inside the editor, talking to GitLab's
+API directly with a personal access token. It also includes a standalone CLI (`gitlab`), real-time
+event router daemon (`gitlab daemon`), and stdio Model Context Protocol (MCP) server for AI fleets.
+See [README.md](README.md) for the user-facing feature tour.
 
 ## Layout
 
-| Path | Holds |
-|------|-------|
-| `shared/contract.ts` | Every Zod schema and `defineRpc` definition. The single source of truth for the shapes crossing the server/client boundary. |
-| `server/` | Runs on the server side only. `auth.ts`, `secrets.ts` (keychain), `state.ts` (which hosts, active account, per-request account), `gitlab.ts` (`rest`/`graphql`/`restWrite`), `queries.ts` (GraphQL text + `Raw*` types + mappers to the contract), `diff.ts`, `log.ts`, `images.ts`, `workspace.ts`, `agent-context.ts`, `handlers.ts` (the RPC handlers), `demo.ts` (the fake GitLab). |
-| `client/` | React Native UI. `account.tsx` (per-account query cache + the `useRpc` wrapper), `plugin-client.ts`, `header-buttons.ts`, stores (`diff-target`, `review-store`, `viewed-store`), and `client/ui/*` for every screen. |
-| `index.server.ts` | Registers each RPC handler; wraps them so a request runs as the account it names. |
-| `index.client.tsx` | Registers panels, the header button, settings, command-center items and the `@GitLab` attachment source. |
-| `test/` | `node --test` suites. |
+| Path                   | Holds                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/contract.ts`   | Every Zod schema and `defineRpc` definition. The single source of truth for the shapes crossing the server/client boundary.                                                                                                                                                                                                                                                             |
+| `server/`              | Runs on the server side only. `auth.ts`, `secrets.ts` (keychain), `state.ts` (which hosts, active account, per-request account), `gitlab.ts` (`rest`/`graphql`/`restWrite`), `queries.ts` (GraphQL text + `Raw*` types + mappers to the contract), `diff.ts`, `log.ts`, `images.ts`, `workspace.ts`, `agent-context.ts`, `handlers.ts` (the RPC handlers), `demo.ts` (the fake GitLab). |
+| `client/`              | React Native UI. `account.tsx` (per-account query cache + the `useRpc` wrapper), `plugin-client.ts`, `header-buttons.ts`, stores (`diff-target`, `review-store`, `viewed-store`), and `client/ui/*` for every screen.                                                                                                                                                                   |
+| `src/`                 | Standalone CLI, daemon, and MCP tools (`config.js`, `daemon.js`, `dispatcher.js`, `gitlab-client.js`, `health.js`, `mcp.js`, `subscriptions.js`).                                                                                                                                                                                                                                       |
+| `bin/`                 | Executable CLI entrypoint `bin/gitlab.js`.                                                                                                                                                                                                                                                                                                                                              |
+| `index.server.ts`      | Registers each RPC handler; wraps them so a request runs as the account it names.                                                                                                                                                                                                                                                                                                       |
+| `index.client.tsx`     | Registers panels, the header button, settings, command-center items and the `@GitLab` attachment source.                                                                                                                                                                                                                                                                                |
+| `test/` & `test-node/` | `node --test` suites (plugin RPCs in TypeScript and daemon/health in JavaScript).                                                                                                                                                                                                                                                                                                       |
 
 ## Commands
 

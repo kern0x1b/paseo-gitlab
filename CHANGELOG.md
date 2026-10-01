@@ -7,19 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-25
+
 ### Added
-- Issue board: a clear board switcher with new, rename and delete; drag and drop between and within
-  columns; add and remove lists; create an issue in a column; author and milestone filters
-- **GitLab item** panel: issues and MRs opened in tabs of their own in the main area
-- An **Issue board** in the main area, as GitLab's issue boards show it: pick a board, see its
-  columns with counts and cards (labels, milestone, due date, assignees), search and filter by
-  assignee and labels, fold columns, open an issue in a side drawer, and move a card to another list
-- A label filter on the Issues, MRs and Review tabs: pick any labels present in the list and it keeps
-  the items that carry every one of them; the choice is remembered per tab
+
+- Standalone CLI (`gitlab` / `paseo-gitlab`): inspect MRs, issues, todos, pipelines, manage subscriptions, daemon, and MCP server
+- Background event router daemon (`gitlab daemon`): real-time event polling, working-hours gating, and direct push delivery to Paseo agents via `paseo send`
+- Fleet subscription registry (`src/subscriptions.js`): specificity-based routing (MR, issue, branch ref, event type, author) with coordinator fallback
+- Daemon health monitor (`src/health.js`): streak-based failure detection, alert delivery to coordinator agent, threshold gating, and recovery notifications
+- Stdio Model Context Protocol (MCP) server (`gitlab mcp`): exposes GitLab tools, todos, MR/issue notes, pipelines, and daemon subscription controls to AI agents
+- Issue board panel: board switcher with create, rename, and delete; drag-and-drop cards between and within columns; column add/remove; create issue in column; author and milestone filters
+- Tabs in main area for Issues and MRs: open items in persistent workspace tabs
+- Label filter on Issues, MRs, and Review tabs with persistent choices per tab
 
 ## [0.1.0] - 2026-09-23
 
 ### Added
+
 - The GitLab panel in the explorer sidebar: **To-Do**, **Issues**, **MRs**, **Review** and
   **Search** tabs, each with a count, a role filter (Assigned / Created / All), and a header
   button whose badge counts what is waiting on you
@@ -46,9 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account, no token, and no network
 
 ### Security
+
 - The token is verified, stored in the OS keychain (written through stdin, one item per host), and
   never returned to the client; https-only hosts; server-side image proxy limited to the connected
   host with magic-byte sniffing and no inline SVG; GitLab HTML sanitised against an allowlist
 
-[Unreleased]: https://github.com/kern0x1b/paseo-gitlab/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kern0x1b/paseo-gitlab/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/kern0x1b/paseo-gitlab/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/kern0x1b/paseo-gitlab/releases/tag/v0.1.0
