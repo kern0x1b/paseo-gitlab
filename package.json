@@ -1,33 +1,57 @@
 {
   "name": "paseo-gitlab",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "A mini GitLab in Paseo: UI explorer plugin, CLI, real-time inbound event router, and MCP server for AI fleets.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "gitlab": "./bin/gitlab.js",
+    "paseo-gitlab": "./bin/gitlab.js"
+  },
   "files": [
     "paseo-plugin.json",
-    "index.client.ts",
     "index.client.tsx",
     "index.server.ts",
-    "index.server.tsx",
     "client/",
     "server/",
-    "shared/"
+    "shared/",
+    "bin/",
+    "src/",
+    "icon.png"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test/loader.mjs --test test/*.test.ts",
-    "hooks:install": "git config core.hooksPath .githooks"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test/loader.mjs --test \"test/*.test.ts\" \"test-node/*.test.js\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "npm run hooks:install",
+    "hooks:install": "git config core.hooksPath .githooks",
+    "start": "node ./bin/gitlab.js",
+    "daemon": "node ./bin/gitlab.js daemon",
+    "mcp": "node ./bin/gitlab.js mcp"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.9.1",
     "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^24.0.0",
     "@types/react": "~19.2.0",
+    "prettier": "^3.5.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "typescript": "^5.9.3",
-    "zod": "^4.4.3",
-    "@types/node": "^24.0.0"
+    "zod": "^4.4.3"
   },
-  "description": "A mini GitLab in the Paseo explorer: issues assigned to you, your merge requests and review requests, with descriptions, labels, threads, replies and resolve.",
+  "keywords": [
+    "gitlab",
+    "mcp",
+    "paseo",
+    "ai-agents",
+    "fleet-coordination",
+    "router",
+    "cli"
+  ],
+  "author": "kern0x1b",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -36,5 +60,8 @@
   "homepage": "https://github.com/kern0x1b/paseo-gitlab#readme",
   "bugs": {
     "url": "https://github.com/kern0x1b/paseo-gitlab/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
