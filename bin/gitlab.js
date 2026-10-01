@@ -370,21 +370,30 @@ async function main() {
 
       case "daemon": {
         const subCmd = positional[0] || "start";
+        const stateFile = path.join(os.homedir(), ".config", "gitlab-router", "daemon-state.json");
 
         if (subCmd === "status") {
-          const stateFile = path.join(os.homedir(), ".config", "gitlab-router", "daemon-state.json");
           if (fs.existsSync(stateFile)) {
-            console.log(fs.readFileSync(stateFile, "utf8"));
-          } else {
-            console.log(
-              JSON.stringify({ running: false, activeSubscriptions: registry.list().length }, null, 2),
-            );
+            try {
+              const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+              if (state.pid) {
+                try {
+                  process.kill(state.pid, 0);
+                  console.log(JSON.stringify(state, null, 2));
+                  break;
+                } catch {
+                  fs.unlinkSync(stateFile);
+                }
+              }
+            } catch {}
           }
+          console.log(
+            JSON.stringify({ running: false, activeSubscriptions: registry.list().length }, null, 2),
+          );
           break;
         }
 
         if (subCmd === "stop") {
-          const stateFile = path.join(os.homedir(), ".config", "gitlab-router", "daemon-state.json");
           if (fs.existsSync(stateFile)) {
             try {
               const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
@@ -402,6 +411,23 @@ async function main() {
           break;
         }
 
+        if (fs.existsSync(stateFile)) {
+          try {
+            const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+            if (state.pid) {
+              try {
+                process.kill(state.pid, 0);
+                console.error(
+                  `A GitLab daemon is already running (PID ${state.pid}). Use 'gitlab daemon stop' first.`,
+                );
+                process.exit(1);
+              } catch {
+                fs.unlinkSync(stateFile);
+              }
+            }
+          } catch {}
+        }
+
         const dispatcher = new EventDispatcher({ registry, config: client.config });
         const intervalMs = flags.interval ? parseInt(flags.interval, 10) * 1000 : undefined;
         const workHoursOnly = !flags.force && (flags["all-hours"] ? false : true);
@@ -415,9 +441,6 @@ async function main() {
           dryRun,
         });
 
-        console.log(`Starting gitlab-agent-router daemon...${dryRun ? " (dry-run)" : ""}`);
-        await daemon.start();
-
         process.on("SIGINT", () => {
           daemon.stop();
           process.exit(0);
@@ -426,6 +449,9 @@ async function main() {
           daemon.stop();
           process.exit(0);
         });
+
+        console.log(`Starting gitlab-agent-router daemon...${dryRun ? " (dry-run)" : ""}`);
+        await daemon.start();
         break;
       }
 
