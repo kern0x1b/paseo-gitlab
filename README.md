@@ -290,15 +290,23 @@ src/gitlab-client.js lightweight REST/GraphQL client reading token from OS keych
 
 ```bash
 # Run CLI
-./bin/gitlab.js whoami
-./bin/gitlab.js todos
-./bin/gitlab.js mr 101
+gitlab whoami
+gitlab todos
+gitlab mr 101
 
-# Run daemon (routes GitLab events to subscribed Paseo agents)
-./bin/gitlab.js daemon
+# AI Fleet Coordinator Binding
+gitlab set-coordinator <agent-id>     # Bind active Paseo coordinator agent ID
+gitlab unset-coordinator              # Clear coordinator binding
+gitlab subscriptions                  # View active MR/issue subscriptions and coordinator
+
+# Daemon Lifecycle
+gitlab daemon                         # Run foreground event router (work hours 08:00-21:00 Mon-Fri)
+gitlab daemon --all-hours             # Run 24/7 event router without sleeping
+gitlab daemon status                  # Check daemon running state and live PID
+gitlab daemon stop                    # Cleanly stop running daemon (SIGTERM)
 
 # Run MCP server
-./bin/gitlab.js mcp
+gitlab mcp
 ```
 
 ### Configuration & Environment Variables
