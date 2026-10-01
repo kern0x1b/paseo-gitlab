@@ -1,9 +1,3 @@
-/**
- * A small line highlighter for diffs: keywords, strings, comments, numbers,
- * annotations and type names, by file extension. Not a parser; it only has to
- * make code readable at a glance, and it carries an open block comment from one
- * line to the next so a multi-line Javadoc stays grey.
- */
 export type TokenKind = "plain" | "keyword" | "string" | "comment" | "number" | "annotation" | "type";
 
 export interface Token {
@@ -15,7 +9,6 @@ interface Language {
   keywords: Set<string>;
   lineComment: string[];
   block: [string, string] | null;
-  /** Characters that open a string, and whether a backtick string may span lines. */
   quotes: string[];
   annotations: boolean;
   types: boolean;
@@ -169,7 +162,6 @@ export function languageOf(path: string): string | null {
   return EXTENSIONS[extension] ?? null;
 }
 
-/** Whether a block comment is still open at the end of the line. */
 export interface HighlightState {
   inBlock: boolean;
 }
@@ -283,7 +275,6 @@ const LIGHT: Record<TokenKind, string | null> = {
   type: "#953800",
 };
 
-/** GitHub's syntax colours, the dark or light set by how dark the panel background is. */
 export function tokenPalette(background: string): Record<TokenKind, string | null> {
   const hex = background.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})/i);
   const rgb = background.match(/rgba?\((\d+)\D+(\d+)\D+(\d+)/i);

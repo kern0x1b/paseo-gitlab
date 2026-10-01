@@ -1,8 +1,3 @@
-/**
- * Mapping GitLab's responses, the upload proxy's host check, and the small formatters.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { htmlToText, safeUrl } from "../client/html/sanitize";

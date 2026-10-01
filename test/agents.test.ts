@@ -1,9 +1,3 @@
-/**
- * The pieces behind the agent hand-off, the @GitLab picker, the workspace card and
- * the header badge.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { badgeFor } from "../client/header-buttons";

@@ -2,13 +2,6 @@ import type { AuthDeps } from "./auth";
 import { accountFor } from "./auth";
 import type { Fetch } from "./gitlab";
 
-/**
- * A make-believe GitLab, served entirely from this file. Connect the plugin to
- * the demo host and every request is answered here instead of over the network:
- * no account, no token, no real project touched. It exists so the plugin's own
- * screens can be shown and screenshotted on invented data. All people, projects
- * and text below are fictional.
- */
 export const DEMO_HOST = "https://demo.gitlab.local";
 
 export function isDemoHost(host: string | null | undefined): boolean {
@@ -40,7 +33,6 @@ const nodes = <T>(items: T[]) => ({ nodes: items });
 const HOUR = 3_600_000;
 const ago = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
 
-/** A row for the To-Do / Issues / MRs lists. */
 function mrRow(row: {
   iid: string;
   title: string;
@@ -252,7 +244,6 @@ const discussion = (
   notes: nodes(notesList),
 });
 
-/** A merge request's full detail, as the GraphQL detail query returns it. */
 function mrDetail(iid: string) {
   const base = {
     id: `gid://gitlab/MergeRequest/${iid}`,
@@ -372,7 +363,6 @@ function mrDetail(iid: string) {
       ]),
     };
   }
-  // 140: someone else's MR, awaiting your review.
   return {
     ...base,
     createdAt: ago(6),
@@ -468,7 +458,6 @@ function issueDetail(iid: string) {
   };
 }
 
-/** A file's changes as GitLab's REST diff returns them. */
 const DIFFS: Record<
   string,
   {
@@ -929,12 +918,10 @@ function graphqlData(query: string, variables: Record<string, unknown>): unknown
     case "PaseoGitLabCreateMergeRequest":
       return { mergeRequestCreate: { mergeRequest: { iid: "141" }, errors: [] } };
     default:
-      // Every other mutation reports success through its payload's `errors`.
       return { [operationField(name)]: { errors: [] } };
   }
 }
 
-/** The mutation's payload field, e.g. PaseoGitLabUpdateIssue → updateIssue. */
 function operationField(name: string): string {
   const base = name.replace(/^PaseoGitLab/, "");
   const map: Record<string, string> = {
@@ -971,7 +958,6 @@ function operationField(name: string): string {
 const okJson = (body: unknown) => Response.json(body);
 
 function restResponse(pathname: string, search: URLSearchParams): Response {
-  // /api/v4/<rest>
   const rest = pathname.replace(/^\/api\/v4/, "");
   if (rest === "/user") {
     return okJson({ username: you.username, name: you.name });
@@ -1035,11 +1021,9 @@ function restResponse(pathname: string, search: URLSearchParams): Response {
   if (/^\/projects\/[^/]+$/.test(rest)) {
     return okJson({ default_branch: "main" });
   }
-  // A project path with no sub-resource we serve: an empty object keeps callers happy.
   return okJson({});
 }
 
-/** A fetch that answers only for the demo host, from the fixtures above. */
 export const demoFetch: Fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(typeof input === "string" ? input : input.toString());
   if (url.pathname === "/api/graphql") {
@@ -1061,10 +1045,6 @@ export const demoFetch: Fetch = (async (input: string | URL | Request, init?: Re
 
 const DEMO_ACCOUNT = accountFor(DEMO_HOST);
 
-/**
- * Deps that serve the demo host from fixtures and leave every other GitLab to the
- * real network and Keychain. The demo token is a constant that never leaves here.
- */
 export function withDemo(deps: AuthDeps): AuthDeps {
   return {
     ...deps,

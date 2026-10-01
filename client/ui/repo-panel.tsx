@@ -34,12 +34,10 @@ import { useStyles } from "./styles";
 import { workspaceKey } from "./workspace-card";
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
-/** Past this a file is shown in part; the rest is one click away in GitLab. */
 const MAX_FILE_LINES = 3000;
 const TREE_WIDTH = 280;
 
 type Tab = "files" | "commits" | "branches";
-/** A diff opened from the commits or branches tab, shown in the tab's place. */
 type Opened = { title: string; scope: DiffScope; webUrl: string; ref: string };
 
 function repoKey(...parts: (string | number | undefined)[]) {
@@ -185,7 +183,6 @@ function FileView({
       state = result.state;
       return result.tokens;
     });
-    // `shown` is derived from `lines`, which is what changes.
   }, [lines, path]);
   const palette = tokenPalette(theme.colors.surface0);
   const webUrl = webUrlFor(ui.host, projectPath, "blob", refName, path);
@@ -289,7 +286,6 @@ function FileView({
   );
 }
 
-/** A commit's or a comparison's files, read-only, each foldable. */
 function DiffView({
   opened,
   projectPath,
@@ -1050,7 +1046,6 @@ function RepositoryPanelContent({ theme, workspaceId }: PluginWorkspacePanelProp
   const host = status.data?.connected ? status.data.host : "";
   const ui: Ui = { theme, styles, host, workspaceId };
   const checkout = workspace.data?.checkout ?? null;
-  // The workspace's own project, or the one of the MR last opened in the diff panel.
   const projectPath = checkout?.projectPath ?? target?.projectPath ?? null;
   const initialRef = checkout?.branch ?? workspace.data?.defaultBranch ?? "HEAD";
 
@@ -1090,7 +1085,6 @@ function RepositoryPanelContent({ theme, workspaceId }: PluginWorkspacePanelProp
   );
 }
 
-/** The project's files, commits and branches in the main area, as GitLab's repository pages show them. */
 export function RepositoryPanel(props: PluginWorkspacePanelProps) {
   return (
     <AccountScope workspaceId={props.workspaceId}>

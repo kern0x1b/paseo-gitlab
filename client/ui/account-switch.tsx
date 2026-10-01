@@ -5,7 +5,6 @@ import { Pressable, Text, View } from "react-native";
 import { chooseAccount, useAccount } from "../account";
 import type { Styles } from "./styles";
 
-/** "@you · gitlab.example.com": which GitLab this panel shows, and a way to pick another. */
 export function AccountSwitch({
   username,
   ui,

@@ -1,8 +1,3 @@
-/**
- * Connecting, status and disconnecting against a fake GitLab and an in-memory secret store.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { accountFor, authStatus, connect, disconnect, normalizeHost, type AuthDeps } from "../server/auth";

@@ -32,13 +32,12 @@ test("alerts exactly once after failing past the threshold and delivery is confi
   clock.advance(119_000);
   assert.equal(health.recordFailure().shouldAlert, false);
 
-  clock.advance(2_000); // total 121s since first failure
+  clock.advance(2_000);
   const alert = health.recordFailure();
   assert.equal(alert.shouldAlert, true);
   assert.equal(alert.since, 0);
   health.markAlertDelivered();
 
-  // Keep failing: must not alert again until a recovery happens
   clock.advance(60_000);
   assert.equal(health.recordFailure().shouldAlert, false);
   clock.advance(600_000);
@@ -53,7 +52,6 @@ test("an undelivered alert stays due on every subsequent failing tick", () => {
   clock.advance(121_000);
   assert.equal(health.recordFailure().shouldAlert, true);
 
-  // Delivery was never confirmed (e.g. dispatch failed): must stay due, not consumed.
   clock.advance(60_000);
   assert.equal(health.recordFailure().shouldAlert, true);
   clock.advance(60_000);
@@ -73,10 +71,8 @@ test("recovers once after an alert was delivered, then can alert again on a new 
   assert.equal(recovered.shouldRecover, true);
   health.markRecoveredDelivered();
 
-  // A second, immediate success must not re-announce recovery
   assert.equal(health.recordSuccess().shouldRecover, false);
 
-  // A brand new failure streak can alert again after the threshold
   health.recordFailure();
   clock.advance(121_000);
   assert.equal(health.recordFailure().shouldAlert, true);
@@ -92,7 +88,6 @@ test("a recovered message stays due until delivery is confirmed", () => {
   health.markAlertDelivered();
 
   assert.equal(health.recordSuccess().shouldRecover, true);
-  // Delivery of the recovered message failed: must retry on the next success.
   assert.equal(health.recordSuccess().shouldRecover, true);
 
   health.markRecoveredDelivered();
@@ -126,7 +121,6 @@ test("resetStreakIfPending clears an undelivered streak but leaves a delivered o
   assert.equal(health.recordFailure().shouldAlert, true);
   health.markAlertDelivered();
 
-  // Already alerted: a pause must not reset the streak (no double alert on resume).
   assert.equal(health.resetStreakIfPending(), false);
   assert.notEqual(health.failingSince, null);
 });

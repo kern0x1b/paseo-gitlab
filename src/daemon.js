@@ -23,7 +23,7 @@ function logError(...args) {
 
 function isWorkingHours() {
   const now = new Date();
-  const day = now.getDay(); // 0 is Sunday, 6 is Saturday
+  const day = now.getDay();
   const hour = now.getHours();
   const isWeekday = day >= 1 && day <= 5;
   const isWorkTime = hour >= 8 && hour < 21;
@@ -70,7 +70,7 @@ export class GitLabDaemon {
 
     this.seenTodoIds = new Set();
     this.seenEventIds = new Set();
-    this.pipelineStatuses = new Map(); // id -> status
+    this.pipelineStatuses = new Map();
     this.currentUser = null;
     this.relevantMrIids = new Set();
     this.relevantIssueIids = new Set();
@@ -101,9 +101,7 @@ export class GitLabDaemon {
         ),
         "utf8",
       );
-    } catch {
-      // Ignore filesystem errors for state file
-    }
+    } catch {}
   }
 
   clearState() {
@@ -111,9 +109,7 @@ export class GitLabDaemon {
       if (fs.existsSync(STATE_FILE)) {
         fs.unlinkSync(STATE_FILE);
       }
-    } catch {
-      // Ignore
-    }
+    } catch {}
   }
 
   getStatus() {
@@ -139,7 +135,6 @@ export class GitLabDaemon {
       return this.explicitIntervalMs;
     }
 
-    // If an active pipeline is running, accelerate to 30s
     const hasActivePipeline = Array.from(this.pipelineStatuses.values()).some(
       (s) => s === "running" || s === "pending",
     );
@@ -148,11 +143,10 @@ export class GitLabDaemon {
     }
 
     if (isWorkingHours()) {
-      return this.baseIntervalMs; // Default 60s
+      return this.baseIntervalMs;
     }
 
-    // Off-hours / weekend backoff
-    return 300 * 1000; // 5 min
+    return 300 * 1000;
   }
 
   async refreshRelevantItems() {
@@ -212,7 +206,6 @@ export class GitLabDaemon {
 
     await this.refreshRelevantItems();
 
-    // Seed initial state so we only process fresh events arriving after daemon start
     try {
       const initialTodos = await this.client.getTodos({ perPage: 30 });
       for (const t of initialTodos) {
@@ -279,18 +272,15 @@ export class GitLabDaemon {
 
   async checkEvents() {
     try {
-      // Poll project-wide events so we can observe other developers' comments, approvals, and reviews
       const events = await this.client.getProjectEvents({ perPage: 30 });
       for (const ev of events) {
         if (this.seenEventIds.has(ev.id)) continue;
         this.seenEventIds.add(ev.id);
 
-        // Skip events authored by ourselves to avoid loops (e.g. our own comments / pushes)
         if (ev.author_username === this.currentUser?.username) {
           continue;
         }
 
-        // Correctly identify target kind and IID from noteable or target
         let mrIid = null;
         let issueIid = null;
         let targetType = ev.target_type;
@@ -318,7 +308,6 @@ export class GitLabDaemon {
         const isMyMr = Boolean(mrIid && this.relevantMrIids.has(Number(mrIid)));
         const isMyIssue = Boolean(issueIid && this.relevantIssueIids.has(Number(issueIid)));
 
-        // Check if an agent explicitly subscribed to this event
         const matchingAgent = this.registry.findMatchingAgent({
           mrIid,
           issueIid,
@@ -328,7 +317,6 @@ export class GitLabDaemon {
           targetType,
         });
 
-        // Smart filter: pass through ONLY if an agent subscribed to it, or if it touches current user's MR/Issue, or mentions them
         if (!matchingAgent && !isMyMr && !isMyIssue && !mentionsMe) {
           continue;
         }
@@ -370,7 +358,7 @@ export class GitLabDaemon {
         const prevStatus = this.pipelineStatuses.get(pipe.id);
         this.pipelineStatuses.set(pipe.id, pipe.status);
 
-        if (!prevStatus) continue; // First time seeing it, skip
+        if (!prevStatus) continue;
 
         if (prevStatus !== pipe.status) {
           if (pipe.status === "failed" || pipe.status === "success" || pipe.status === "canceled") {
@@ -485,10 +473,8 @@ export class GitLabDaemon {
     const tick = async () => {
       if (!this.running) return;
 
-      // If workHoursOnly is enabled and currently off-hours, sleep and recheck in 5 minutes
       if (this.workHoursOnly && !isWorkingHours()) {
         log("[GitLab Daemon] Sleeping outside working hours (08:00 - 21:00 Mon-Fri). Will recheck later.");
-        // Don't let an off-hours pause count toward the failure threshold unless it already alerted
         if (this.health.resetStreakIfPending()) {
           this.failingSourcesThisStreak.clear();
         }
@@ -499,7 +485,6 @@ export class GitLabDaemon {
         return;
       }
 
-      // Refresh relevant targets (MRs / Issues) every 5 minutes
       let refreshResult = { success: true, source: "relevantTargets" };
       if (Date.now() - this.lastRelevantRefreshAt > 300_000) {
         refreshResult = await this.refreshRelevantItems();

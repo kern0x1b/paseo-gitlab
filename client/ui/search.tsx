@@ -58,11 +58,6 @@ function Segmented<T extends string>({
   );
 }
 
-/**
- * Search a project's issues and MRs by text, state, label, author and assignee,
- * and keep the searches you repeat as saved queries, like the custom queries of
- * GitLab's editor extensions.
- */
 export function SearchPanel({
   defaultProject,
   onOpen,

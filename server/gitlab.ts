@@ -1,9 +1,4 @@
-/**
- * The only code that talks to GitLab. A personal access token is sent as a Bearer
- * token, which both the REST and the GraphQL API accept.
- */
 export interface Connection {
-  /** Origin only, e.g. `https://gitlab.example.com`. */
   host: string;
   token: string;
 }
@@ -71,7 +66,6 @@ export async function graphql<T>(
   return body.data;
 }
 
-/** Mutations report failures in their payload's `errors`, not at the top level. */
 export function assertNoMutationErrors(
   payload: { errors?: string[] } | null | undefined,
   action: string,
@@ -84,7 +78,6 @@ export function assertNoMutationErrors(
   }
 }
 
-/** A REST write. Answers with the parsed body, or null for an empty one (204, or an empty 201). */
 export async function restWrite<T>(
   connection: Connection,
   method: "POST" | "PUT" | "DELETE",
@@ -111,9 +104,7 @@ export async function restWrite<T>(
           : typeof parsed.error === "string"
             ? parsed.error
             : "";
-    } catch {
-      // No JSON body to explain it.
-    }
+    } catch {}
     const error = httpError(response.status);
     throw detail ? new GitLabError(`${error.message} ${detail}`, response.status) : error;
   }

@@ -3,11 +3,6 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { stateDir } from "./state";
 
-/**
- * Where the GitLab token lives. On macOS that is the login Keychain, one item per
- * GitLab host; elsewhere a 0600 file in the plugin's state directory, which is no
- * worse than what `glab` does without a keyring.
- */
 export interface SecretStore {
   read(account: string): Promise<string | null>;
   write(account: string, secret: string): Promise<void>;
@@ -17,16 +12,12 @@ export interface SecretStore {
 const KEYCHAIN_SERVICE = "paseo-gitlab";
 const SECURITY_TIMEOUT_MS = 5000;
 
-/** Both values are passed unquoted to `security -i`, so they must not need quoting. */
 const SAFE_VALUE = /^[A-Za-z0-9._:-]+$/;
 
 type SecurityRun = (args: string[], stdin?: string) => Promise<{ code: number; stdout: string }>;
 
 function runSecurity(args: string[], stdin?: string): Promise<{ code: number; stdout: string }> {
   return new Promise((done) => {
-    // stdin is only opened when there is something to write: `find-generic-password`
-    // never reads it and can exit first, and ending a pipe to a gone process raises
-    // EPIPE, which without a listener takes the whole plugin process down.
     const child = spawn("security", args, {
       stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "ignore"],
     });
@@ -44,9 +35,7 @@ function runSecurity(args: string[], stdin?: string): Promise<{ code: number; st
       done({ code: code ?? -1, stdout });
     });
     if (stdin !== undefined && child.stdin) {
-      child.stdin.on("error", () => {
-        // Reported through the exit code instead.
-      });
+      child.stdin.on("error", () => {});
       child.stdin.end(stdin);
     }
   });
@@ -74,7 +63,6 @@ export function keychainStore(run: SecurityRun = runSecurity): SecretStore {
     async write(account, secret) {
       assertSafe(account, "host");
       assertSafe(secret, "token");
-      // Through stdin rather than argv, so the token never shows up in `ps`.
       const { code } = await run(
         ["-i"],
         `add-generic-password -U -a ${account} -s ${KEYCHAIN_SERVICE} -w ${secret}\n`,

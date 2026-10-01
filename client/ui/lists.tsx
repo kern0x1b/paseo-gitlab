@@ -43,10 +43,6 @@ function todoAction(action: string): string {
   return TODO_ACTIONS[action] ?? humanize(action).toLowerCase();
 }
 
-/**
- * One property line, the way GitLab's sidebar and Linear list them: a fixed-width
- * label, then each person as avatar and name, wrapping when there are several.
- */
 function PeopleLine({ label, people, styles }: { label: string; people: Person[]; styles: Styles }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
@@ -249,7 +245,6 @@ function LabelChip({ label, onRemove, styles }: { label: Label; onRemove?: () =>
   );
 }
 
-/** "Labels" and the chosen ones: the list keeps the items that carry every chosen label. */
 function LabelFilter({
   available,
   selected,
@@ -374,7 +369,6 @@ const TABS: { id: TabId; label: string; count: (lists: Lists) => number; empty: 
 ];
 
 function firstTab(lists: Lists): TabId {
-  // Whatever someone else is blocked on wins the first look.
   if (lists.reviewMergeRequests.length > 0) {
     return "review";
   }
@@ -397,7 +391,6 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
   const labelTab: LabelTab | null = tab === "issues" || tab === "mrs" || tab === "review" ? tab : null;
   const unfiltered =
     tab === "issues" ? lists.issues : tab === "mrs" ? lists.mergeRequests : lists.reviewMergeRequests;
-  // A saved label no item carries any more is ignored, so it cannot empty the list unnoticed.
   const present = labelsIn(unfiltered);
   const selectedLabels = labelTab
     ? labelFilters[labelTab].filter((title) => present.some((entry) => entry.label.title === title))
@@ -413,9 +406,7 @@ export function ItemLists({ lists, onOpen, ui }: { lists: Lists; onOpen: (ref: I
       const updated = { ...current, [labelTab]: next };
       try {
         globalThis.localStorage?.setItem(LABEL_FILTERS_KEY, JSON.stringify(updated));
-      } catch {
-        // No storage: the filter lasts until the window closes.
-      }
+      } catch {}
       return updated;
     });
   };

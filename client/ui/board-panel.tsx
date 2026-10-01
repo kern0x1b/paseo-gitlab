@@ -40,7 +40,6 @@ const COLLAPSED_WIDTH = 44;
 const DRAWER_WIDTH = 520;
 const SEARCH_DEBOUNCE_MS = 350;
 const NO_FILTERS: BoardFilters = { search: "", assignee: null, labels: [], author: null, milestone: null };
-/** What a dragged card carries; a private type, so drops from anywhere else are ignored. */
 const DRAG_TYPE = "application/x-paseo-gitlab-card";
 
 const BOARD_CHOICE_KEY = "paseo-gitlab:board-choice";
@@ -60,9 +59,7 @@ function readStore<T>(key: string): Record<string, T> {
 function writeStore<T>(key: string, id: string, value: T): void {
   try {
     globalThis.localStorage?.setItem(key, JSON.stringify({ ...readStore<T>(key), [id]: value }));
-  } catch {
-    // No storage: the choice lasts until the window closes.
-  }
+  } catch {}
 }
 
 function boardKey(...parts: string[]) {
@@ -98,7 +95,6 @@ function overdue(dueDate: string): boolean {
   return dueDate < new Date().toISOString().slice(0, 10);
 }
 
-/** The DOM node behind a React Native view, on the web; drag and drop is wired to it directly. */
 function domNode(ref: React.RefObject<View | null>): HTMLElement | null {
   return Platform.OS === "web" ? (ref.current as unknown as HTMLElement | null) : null;
 }
@@ -135,7 +131,6 @@ function Choice({
   );
 }
 
-/** Assignee or author: a fixed choice or anyone found by name. */
 function PersonPicker({
   open,
   onClose,
@@ -259,7 +254,6 @@ function MilestonePicker({
 
 type PickedLabel = { id: string; title: string; color: string; textColor: string };
 
-/** Labels found by name: several for the filter, or one for a new list. */
 function LabelPicker({
   open,
   onClose,
@@ -364,7 +358,6 @@ function CardView({
 }: {
   card: BoardCard;
   columnId: string;
-  /** A dragged card would land right above this one. */
   dropBefore: boolean;
   onOpen: () => void;
   onMove: () => void;
@@ -475,7 +468,6 @@ function CardView({
   );
 }
 
-/** A new issue typed at the top of a column; it gets the column's label, or none in Open. */
 function NewCard({
   column,
   projectPath,
@@ -557,7 +549,6 @@ function Column({
   projectPath: string;
   filters: BoardFilters;
   collapsed: boolean;
-  /** The board's height, measured: columns run the full height and scroll their own cards. */
   height: number;
   onToggle: () => void;
   onOpen: (card: BoardCard) => void;
@@ -587,7 +578,6 @@ function Column({
   const lastRef = useRef(lastId);
   lastRef.current = lastId;
 
-  // The column takes drops: the card lands above the one under the pointer, or at the end.
   useEffect(() => {
     const node = domNode(ref);
     if (!node) {
@@ -618,9 +608,7 @@ function Column({
       event.preventDefault();
       try {
         dropRef.current(JSON.parse(raw) as DragPayload, column, cardUnder(event), lastRef.current);
-      } catch {
-        // Not a card from this board.
-      }
+      } catch {}
     };
     node.addEventListener("dragover", onOver);
     node.addEventListener("dragleave", onLeave);
@@ -827,7 +815,6 @@ function MoveModal({
   );
 }
 
-/** The board switcher: every board of the project, a new one, and renaming or deleting this one. */
 function BoardsModal({
   open,
   onClose,
@@ -1021,7 +1008,6 @@ function IssueBoard({ projectPath, viewer, ui }: { projectPath: string; viewer: 
   const [opened, setOpened] = useState<ItemRef | null>(null);
   const [boardHeight, setBoardHeight] = useState(0);
 
-  // Filters and folded columns are remembered per board, like GitLab keeps them in the URL.
   useEffect(() => {
     if (!board) {
       return;
@@ -1442,7 +1428,6 @@ function BoardPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const target = useDiffTarget(workspaceId);
   const host = status.data?.connected ? status.data.host : "";
   const ui: Ui = { theme, styles, host, workspaceId };
-  // The workspace's own project, or the one of the MR last opened in the diff panel.
   const projectPath = workspace.data?.checkout?.projectPath ?? target?.projectPath ?? null;
 
   let body: React.ReactNode;
@@ -1476,7 +1461,6 @@ function BoardPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
   );
 }
 
-/** The project's issue board in the main area: its columns, cards and filters, as GitLab shows them. */
 export function BoardPanel(props: PluginWorkspacePanelProps) {
   return (
     <AccountScope workspaceId={props.workspaceId}>

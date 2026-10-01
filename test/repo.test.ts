@@ -1,8 +1,3 @@
-/**
- * The repository browser's reads and branch writes, against a fake REST endpoint.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createHandlers } from "../server/handlers";

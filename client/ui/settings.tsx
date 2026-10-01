@@ -23,7 +23,6 @@ import { STATUS_KEY } from "./queries";
 import { useStyles, type Styles } from "./styles";
 
 const DEFAULT_HOST = "https://gitlab.com";
-/** GitLab pre-fills the token form from these, so creating the right token is one click. */
 function tokenPageUrl(host: string): string {
   return `${host.replace(/\/+$/, "")}/-/user_settings/personal_access_tokens?name=Paseo&scopes=api`;
 }
@@ -122,7 +121,6 @@ function ConnectForm({
   );
 }
 
-/** One connected GitLab: its account, its token, and Disconnect for it alone. */
 function AccountCard({ host, styles, onChanged }: { host: string; styles: Styles; onChanged: () => void }) {
   const readStatus = useRpc(authStatusRpc);
   const disconnectRpc = useRpc(authDisconnectRpc);

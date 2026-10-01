@@ -1,9 +1,3 @@
-/**
- * Comments on diff lines: GitLab's position for one line and for a range, and the
- * message an agent gets instead.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { agentMessage, rangeLabel, suggestionFor } from "../client/ui/code-comment";

@@ -7,10 +7,6 @@ import { htmlToText, sanitizeHtml } from "./sanitize";
 
 const STYLE_ID = "paseo-gitlab-markdown";
 
-/**
- * Scoped under `.pgl-md` and painted from CSS variables the container sets, so a
- * theme switch recolours every rendered body without re-injecting the sheet.
- */
 const CSS = `
 .pgl-md { color: var(--pgl-fg); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .pgl-md > :first-child { margin-top: 0; }
@@ -46,7 +42,6 @@ function ensureStyles(): void {
   document.head.appendChild(style);
 }
 
-/** Per window: the same screenshot shows up in the list of every refresh. */
 const imageCache = new Map<string, Promise<string | null>>();
 
 function replaceWithLink(image: HTMLImageElement, url: string): void {
@@ -61,7 +56,6 @@ function replaceWithLink(image: HTMLImageElement, url: string): void {
 export function HtmlBody({ html, host, theme }: { html: string; host: string; theme: PluginTheme }) {
   const container = useRef<HTMLDivElement | null>(null);
   const fetchImage = useRpc(imageRpc);
-  // Read through a ref so a new function identity per render does not rebuild the body.
   const fetchImageRef = useRef(fetchImage);
   fetchImageRef.current = fetchImage;
 

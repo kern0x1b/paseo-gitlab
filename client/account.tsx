@@ -6,19 +6,12 @@ import { View } from "react-native";
 import type { input as ZodInput, ZodType } from "zod";
 import { accountsRpc } from "../shared/contract";
 
-/**
- * Which GitLab a panel works with. A workspace follows its `origin` when that is
- * one of the connected GitLabs, else the default one, unless you picked another in
- * the panel. Every RPC the panel makes names that account, and its queries live in
- * a cache of their own, so two workspaces on two GitLabs never mix their data.
- */
 export const ACCOUNTS_KEY = ["gitlab-accounts"] as const;
 const CHOICES_KEY = "paseo-gitlab:workspace-accounts";
 
 interface AccountState {
   hosts: string[];
   account: string | null;
-  /** The connected GitLab the workspace's `origin` points at. */
   fromRemote: string | null;
   workspaceId: string | null;
 }
@@ -34,7 +27,6 @@ export function useAccount(): AccountState {
   return useContext(AccountContext);
 }
 
-/** The SDK's `useRpc`, with the panel's account added to every call that does not name one. */
 export function useRpc<InputSchema extends ZodType, OutputSchema extends ZodType>(
   contract: PluginRpcContract<InputSchema, OutputSchema>,
 ) {
@@ -58,7 +50,6 @@ function cacheFor(account: string): QueryClient {
   return cache;
 }
 
-/** After connecting or disconnecting: every panel reads its account's data again. */
 export function refreshAccountCaches(): void {
   for (const cache of caches.values()) {
     void cache.invalidateQueries();
@@ -74,7 +65,6 @@ let choices: Record<string, string> = (() => {
   }
 })();
 
-/** Pins a workspace to a GitLab; null goes back to following its `origin`. */
 export function chooseAccount(workspaceId: string, host: string | null): void {
   const next = { ...choices };
   if (host) {
@@ -85,9 +75,7 @@ export function chooseAccount(workspaceId: string, host: string | null): void {
   choices = next;
   try {
     globalThis.localStorage?.setItem(CHOICES_KEY, JSON.stringify(choices));
-  } catch {
-    // No storage: the choice lasts until the window closes.
-  }
+  } catch {}
   for (const listener of listeners) {
     listener();
   }
@@ -123,8 +111,6 @@ export function AccountScope({ workspaceId, children }: { workspaceId: string; c
   return (
     <AccountContext.Provider value={{ hosts, account, fromRemote, workspaceId }}>
       <QueryClientProvider client={cacheFor(account ?? "")}>
-        {/* Keyed by account: switching GitLab remounts the subtree so every query
-            starts fresh, instead of carrying one account's cached status into another. */}
         <View key={account ?? ""} style={{ flex: 1 }}>
           {children}
         </View>

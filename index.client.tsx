@@ -19,7 +19,6 @@ import { attachmentSearchRpc } from "./shared/contract";
 
 const ICON = "GitMerge";
 
-/** Client entry: the panel (explorer sidebar by default), a header button to open it, its settings screen and a Cmd+K shortcut. */
 export default function contribute(client: PluginClientContext) {
   setPluginClient(client);
   const removers = [

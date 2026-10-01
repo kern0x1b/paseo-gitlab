@@ -35,16 +35,9 @@ import { draftsKey, ReviewBar } from "./review";
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
 
-/**
- * Keeps a code line's indentation and breaks it inside the text when it is too
- * wide. Normal wrapping breaks at the indentation's last space, which leaves the
- * line number alone on one row and the code on the next.
- */
 const CODE_WRAP =
   Platform.OS === "web" ? ({ whiteSpace: "pre-wrap", wordBreak: "break-all" } as object) : null;
-/** The default, as in GitLab and editors: a line keeps its length and the file scrolls sideways. */
 const CODE_NOWRAP = Platform.OS === "web" ? ({ whiteSpace: "pre" } as object) : null;
-/** Keeps threads and comment boxes in view while the code under them scrolls sideways. */
 const PIN_LEFT = Platform.OS === "web" ? ({ position: "sticky", left: 0 } as object) : null;
 
 export function diffsKey(ref: ItemRef) {
@@ -60,7 +53,6 @@ function inFile(discussion: Discussion, file: DiffFile): boolean {
   return path === file.newPath || path === file.oldPath;
 }
 
-/** GitLab anchors a comment on a removed line by its old number, on anything else by its new one. */
 function anchoredAt(discussion: Discussion, line: DiffLine): boolean {
   const position = discussion.notes[0]?.position;
   if (!position || line.kind === "hunk") {
@@ -84,7 +76,6 @@ function LineRow({
   line: ShownLine;
   tokens: Token[];
   wrap: boolean;
-  /** Side by side: which half this is, so only its line number shows. */
   side?: "old" | "new";
   onPress?: () => void;
   selected: boolean;
@@ -176,7 +167,6 @@ function LineRow({
   );
 }
 
-/** A hunk header, and the way to see the unchanged lines it skips. */
 function HunkRow({
   line,
   onExpand,
@@ -236,26 +226,21 @@ function HunkRow({
 }
 
 export interface CommentHandlers {
-  /** Sidebar: comments go straight to GitLab, at once or into the review kept there. */
   toGitLab?: (selection: CodeSelection, body: string, asDraft: boolean) => Promise<unknown>;
-  /** Main area: comments pile up locally until the review is submitted, to an agent or to GitLab. */
   stack?: {
     add: (selection: CodeSelection, body: string) => void;
     edit: (id: string, body: string) => void;
     remove: (id: string) => void;
-    /** A question about the lines, sent to your agent now instead of waiting in the review. */
     ask?: (selection: CodeSelection, body: string) => Promise<void>;
   };
 }
 
-/** How the diff is laid out; the main area lets you change it, the sidebar uses the defaults. */
 export interface DiffView {
   wrap?: boolean;
   split?: boolean;
   hideWhitespace?: boolean;
 }
 
-/** A comment waiting in your review, shown under the line it ends on, like GitLab's pending notes. */
 function PendingNote({
   comment,
   viewer,
@@ -383,29 +368,23 @@ export function FileDiff({
   ui,
 }: {
   file: DiffFile;
-  /** The MR's threads; the ones on this file are shown under their lines. */
   threads?: Discussion[];
-  /** Where GitLab shows these changes, for a file too large to show here. */
   changesUrl: string;
   canComment: boolean;
-  /** Whether "Suggest change" is offered: you can push to the source branch. */
   canSuggest: boolean;
   expanded: boolean;
   onToggle: () => void;
   actions?: NoteActions;
   handlers?: CommentHandlers;
-  /** This file's comments waiting in your local review. */
   pending?: PendingComment[];
   viewer?: { username: string; name: string; avatarUrl?: string | null } | null;
   view?: DiffView;
   viewed?: { value: boolean; onChange: (value: boolean) => void };
-  /** The whole file at the diff's head, to show the unchanged lines around the hunks. */
   loadFile?: () => Promise<string[] | null>;
   ui: Ui;
 }) {
   const { styles, theme } = ui;
   const toast = useToast();
-  // Indexes into the shown lines; the first click anchors, the next one in the same file stretches it.
   const [selection, setSelection] = useState<{ anchor: number; focus: number } | null>(null);
   const [openGaps, setOpenGaps] = useState<ReadonlySet<number>>(() => new Set());
   const [fileLines, setFileLines] = useState<string[] | null>(null);
@@ -423,9 +402,7 @@ export function FileDiff({
   const placed = new Set<string>();
   const title = file.renamedFile ? `${file.oldPath} → ${file.newPath}` : file.newPath;
   const [visibleWidth, setVisibleWidth] = useState(0);
-  // What sits between code lines takes the visible width and stays put while the code scrolls.
   const pinned = wrap ? null : [{ width: visibleWidth || undefined }, PIN_LEFT];
-  // Highlighted once per file; a hunk header resets the carried block-comment state.
   const highlighted = useMemo(() => {
     const language = languageOf(file.newPath);
     let state: HighlightState = { inBlock: false };
@@ -541,7 +518,6 @@ export function FileDiff({
     );
   };
 
-  // Threads, pending comments and the open composer that belong under a line.
   const below = (index: number) => {
     const line = lines[index]!;
     const here = threads.filter((discussion) => anchoredAt(discussion, line));
@@ -691,7 +667,6 @@ export function FileDiff({
                   ? threads
                       .filter((discussion) => !placed.has(discussion.id))
                       .map((discussion) => (
-                        // Anchored to a line outside the shown hunks, or to an older version of the file.
                         <View key={discussion.id} style={[{ padding: 8, gap: 4 }, pinned]}>
                           <Text style={styles.small}>On a line not in this diff</Text>
                           <Thread discussion={discussion} actions={actions} ui={ui} />
@@ -718,9 +693,7 @@ export function ChangesView({
   itemRef: ItemRef;
   focusPath?: string;
   onBack?: () => void;
-  /** Opens the same changes in the main area; shown only in the sidebar. */
   onOpenWide?: () => void;
-  /** Replaces the default back-and-title row, for the main-area panel. */
   header?: React.ReactNode;
   ui: Ui;
 }) {
@@ -740,7 +713,6 @@ export function ChangesView({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const files = diffs.data?.files ?? [];
-  // Open the file a thread pointed at, or everything when the MR is small.
   const initiallyOpen = useMemo(() => {
     if (focusPath) {
       return new Set(

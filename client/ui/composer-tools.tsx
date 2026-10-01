@@ -5,7 +5,6 @@ import { Platform } from "react-native";
 import { referenceSearchRpc, searchUsersRpc, uploadRpc } from "../../shared/contract";
 import { trailingToken } from "./tokens";
 
-/** The project a composer writes into: mentions, references and uploads resolve against it. */
 export const ProjectContext = createContext<string | null>(null);
 
 export function useProjectPath(): string | null {
@@ -28,7 +27,6 @@ export interface Suggestion {
   insert: string;
 }
 
-/** What GitLab would offer for the token being typed, the way its own editor does. */
 export function useSuggestions(
   text: string,
   projectPath: string | null,
@@ -76,10 +74,6 @@ function readAsBase64(file: Blob): Promise<string> {
   });
 }
 
-/**
- * On web, a pasted image goes to GitLab's uploads and its Markdown lands in the
- * text, the way pasting a screenshot works on the site.
- */
 export function usePasteUpload(
   element: HTMLElement | null,
   projectPath: string | null,
@@ -88,7 +82,6 @@ export function usePasteUpload(
 ): boolean {
   const upload = useRpc(uploadRpc);
   const [uploading, setUploading] = useState(false);
-  // Latest callbacks through a ref, so a re-render does not re-bind the listener.
   const latest = useRef({ upload, onInsert, onError });
   latest.current = { upload, onInsert, onError };
   useEffect(() => {

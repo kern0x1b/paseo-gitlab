@@ -17,7 +17,6 @@ import { JobLogView, PipelineView } from "./pipeline";
 import { LISTS_KEY, LISTS_REFRESH_MS, STATUS_KEY } from "./queries";
 import { useStyles } from "./styles";
 
-/** What the panel shows, as a stack: back pops one level. */
 type Screen =
   | { kind: "item"; ref: ItemRef }
   | { kind: "changes"; ref: ItemRef; focusPath?: string }
@@ -25,11 +24,6 @@ type Screen =
   | { kind: "job"; projectPath: string; job: Job; pipelineIid: string | null }
   | { kind: "create"; target: CreateTarget };
 
-/**
- * The GitLab panel: the lists, and whatever was opened from them in their place. It lives
- * in the explorer sidebar by default and can be moved to the main panel, where the
- * same component simply gets more width.
- */
 export function GitLabPanel(props: PluginWorkspacePanelProps) {
   return (
     <AccountScope workspaceId={props.workspaceId}>
@@ -45,7 +39,6 @@ function GitLabPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const [stack, setStack] = useState<Screen[]>([]);
   const push = (screen: Screen) => setStack((current) => [...current, screen]);
   const back = () => setStack((current) => current.slice(0, -1));
-  /** Swaps the top screen, so Back from a created item skips the form it came from. */
   const replace = (screen: Screen) => setStack((current) => [...current.slice(0, -1), screen]);
   const top = stack[stack.length - 1];
 

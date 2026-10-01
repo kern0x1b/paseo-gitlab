@@ -51,7 +51,6 @@ import type { Styles } from "./styles";
 
 export type Ui = { theme: PluginTheme; styles: Styles; host: string; workspaceId: string };
 
-/** What a thread needs to act on its notes; built once per detail. */
 export interface NoteActions {
   reply: (discussionId: string, body: string) => Promise<unknown>;
   resolve: (discussionId: string, resolve: boolean) => Promise<unknown>;
@@ -59,13 +58,10 @@ export interface NoteActions {
   remove: (noteId: string) => Promise<unknown>;
   react: (awardableId: string, name: string) => Promise<unknown>;
   viewer: string;
-  /** Only when you can push to the source branch, which applying commits to. */
   applySuggestion?: (suggestionId: string) => Promise<unknown>;
-  /** MRs only: the reply goes into your pending review instead of out at once. */
   draftReply?: (discussionId: string, body: string) => Promise<unknown>;
 }
 
-/** An extra send action next to the primary one, like "Start thread" or "Add to review". */
 export interface ComposerAction {
   label: string;
   onSend: (body: string) => Promise<unknown>;
@@ -106,10 +102,6 @@ function Link({
   );
 }
 
-/**
- * One composer for new comments, replies and edits. Cmd/Ctrl+Enter sends the
- * primary action on web; a secondary action ("Start thread") sits next to it.
- */
 export function Composer({
   placeholder,
   sendLabel,
@@ -125,7 +117,6 @@ export function Composer({
   sendLabel: string;
   onSend: (body: string) => Promise<unknown>;
   others?: ComposerAction[];
-  /** Snippets to insert, like a suggestion block pre-filled with the line. */
   templates?: { label: string; text: string }[];
   onCancel?: () => void;
   initialValue?: string;
@@ -163,7 +154,6 @@ export function Composer({
       await action(text);
       setBody("");
     } catch {
-      // The mutation already raised a toast; keep the text so nothing typed is lost.
     } finally {
       setSending(null);
     }
@@ -402,7 +392,6 @@ export function Thread({
   const [replying, setReplying] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [first, ...replies] = discussion.notes;
-  // Collapsed like GitLab does: a resolved thread shows its first note and a count.
   const [expanded, setExpanded] = useState(!discussion.resolved);
   if (!first) {
     return null;
@@ -554,7 +543,6 @@ function EditForm({
     try {
       await onSave({ title: title.trim(), description });
     } catch {
-      // Reported by the mutation's toast; the form stays open with the edits.
     } finally {
       setSaving(false);
     }
@@ -685,10 +673,6 @@ function Header({
   );
 }
 
-/**
- * Every write here follows the same path: run it, refresh the item and the lists,
- * and on failure show a toast and rethrow so the caller keeps its form open.
- */
 export function useWrite(itemRef: ItemRef): (work: () => Promise<unknown>) => Promise<void> {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -704,7 +688,6 @@ export function useWrite(itemRef: ItemRef): (work: () => Promise<unknown>) => Pr
   };
 }
 
-/** Note mutations, shared by the detail and the changes view. */
 export function useNoteActions(itemRef: ItemRef, detail: Detail | undefined): NoteActions {
   const addNote = useRpc(addNoteRpc);
   const updateNote = useRpc(updateNoteRpc);
@@ -747,7 +730,6 @@ export function ItemDetail({
   onBack: () => void;
   onOpenPipeline: (ref: PipelineRef) => void;
   onOpenChanges: (focusPath?: string) => void;
-  /** Shown where the item is not already in a tab of its own: the sidebar and the board drawer. */
   onOpenInTab?: () => void;
   ui: Ui;
 }) {

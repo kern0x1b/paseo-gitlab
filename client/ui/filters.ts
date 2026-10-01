@@ -1,6 +1,5 @@
 import type { Label, ListItem } from "../../shared/contract";
 
-/** Issues and MRs are yours as author, assignee or both; the list can show either side. */
 export type RoleFilter = "assignee" | "author" | "all";
 
 export const ROLE_FILTERS: { id: RoleFilter; label: string; empty: string }[] = [
@@ -13,12 +12,10 @@ export function byRole(items: ListItem[], filter: RoleFilter): ListItem[] {
   return filter === "all" ? items : items.filter((item) => item.roles.includes(filter));
 }
 
-/** Assigned is what you have to act on, so it leads, unless it is empty and would hide the rest. */
 export function defaultRoleFilter(items: ListItem[]): RoleFilter {
   return byRole(items, "assignee").length > 0 ? "assignee" : "all";
 }
 
-/** The labels on a list, each with how many items carry it, most used first. */
 export function labelsIn(items: ListItem[]): { label: Label; count: number }[] {
   const byTitle = new Map<string, { label: Label; count: number }>();
   for (const item of items) {
@@ -33,7 +30,6 @@ export function labelsIn(items: ListItem[]): { label: Label; count: number }[] {
   );
 }
 
-/** Items that carry every selected label, as GitLab's own label filter does. */
 export function byLabels(items: ListItem[], selected: string[]): ListItem[] {
   if (selected.length === 0) {
     return items;

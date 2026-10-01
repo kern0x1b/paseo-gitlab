@@ -3,14 +3,6 @@ import type { PluginButtonRegistration, PluginClientContext } from "@getpaseo/pl
 import { authStatusRpc, clientLogRpc, listsRpc, type Lists } from "../shared/contract";
 import { PANEL_ID } from "./plugin-client";
 
-/**
- * Plugin panels are only reachable from the tab launcher and Cmd+K, which nobody
- * finds on their own. A header button in every workspace opens the panel in the
- * explorer sidebar in one click, and its label counts what is waiting on you:
- * review requests and to-dos, plus a mark when one of your MRs has a failed
- * pipeline. Header buttons are registered per workspace, so the set follows the
- * workspace list.
- */
 const WORKSPACE_PAGE_LIMIT = 200;
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -46,7 +38,6 @@ export function startHeaderButtons(client: PluginClientContext, icon: string): P
 
   function register(workspaceId: string): PluginButtonRegistration {
     return client.addHeaderButton({
-      // Button ids must match /^[a-z][a-z0-9-]*$/; the host keys them by workspace already.
       id: "open-gitlab",
       workspaceId,
       button: {
@@ -82,7 +73,6 @@ export function startHeaderButtons(client: PluginClientContext, icon: string): P
     badge = next;
     for (const [workspaceId, button] of buttons) {
       if (hadLabel && !next.label) {
-        // A patch cannot take a label away; register the icon-only button again.
         button.remove();
         buttons.set(workspaceId, register(workspaceId));
       } else {
@@ -95,12 +85,9 @@ export function startHeaderButtons(client: PluginClientContext, icon: string): P
     try {
       const status = await client.rpc(authStatusRpc, {});
       applyBadge(badgeFor(status.connected ? await client.rpc(listsRpc, {}) : null));
-    } catch {
-      // Keeps the last badge; the panel shows the error when opened.
-    }
+    } catch {}
   }
 
-  // Subscribed before the initial list so a workspace created in between is not missed.
   const unsubscribe = client.paseo.workspaces.subscribe((update) => {
     if (update.kind === "upsert") {
       add(update.workspace.id);

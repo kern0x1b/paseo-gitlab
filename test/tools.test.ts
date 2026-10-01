@@ -1,8 +1,3 @@
-/**
- * Composer references, search variables, saved queries and uploads.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +12,7 @@ const HOST = "https://gitlab.example.com";
 
 describe("trailingToken", () => {
   it("finds the mention or reference being typed at the end", () => {
-    assert.deepEqual(trailingToken("thanks @ole"), { trigger: "@", term: "ole", start: 7 });
+    assert.deepEqual(trailingToken("thanks @dev"), { trigger: "@", term: "dev", start: 7 });
     assert.deepEqual(trailingToken("see #"), { trigger: "#", term: "", start: 4 });
     assert.deepEqual(trailingToken("!46"), { trigger: "!", term: "46", start: 0 });
     assert.equal(trailingToken("mail me@example.com"), null);

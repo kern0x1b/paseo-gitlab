@@ -1,9 +1,3 @@
-/**
- * Which GitLab mutation each write turns into, against a fake GraphQL endpoint,
- * and the diff parser that numbers the lines code comments are anchored to.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseUnifiedDiff } from "../server/diff";
@@ -17,7 +11,6 @@ function recordingGitLab() {
     const body = JSON.parse(init?.body ?? "{}") as { query: string; variables: Record<string, unknown> };
     const operation = body.query.match(/(?:mutation|query)\s+(\w+)/)?.[1] ?? "?";
     calls.push({ operation, variables: body.variables });
-    // Every mutation in the plugin reads only `errors` from its payload.
     const field = body.query.match(/\{\s*(\w+)\s*\(input/)?.[1] ?? "result";
     return Response.json({ data: { [field]: { errors: [] } } });
   }) as unknown as typeof fetch;

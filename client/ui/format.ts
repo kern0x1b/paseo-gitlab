@@ -19,7 +19,6 @@ export function timeAgo(iso: string, nowMs: number = Date.now()): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** `group/sub/project!123` → `project !123`: the list shows the repo name, not its whole path. */
 export function shortReference(reference: string): string {
   const match = reference.match(/^(?:.*\/)?([^/]+)([#!]\d+)$/);
   return match ? `${match[1]} ${match[2]}` : reference;
@@ -85,7 +84,6 @@ export function initials(name: string): string {
   );
 }
 
-/** Statuses that will still change on their own, so the view should keep polling. */
 export function isActive(status: string | null | undefined): boolean {
   return status != null && RUNNING.has(status.toUpperCase());
 }

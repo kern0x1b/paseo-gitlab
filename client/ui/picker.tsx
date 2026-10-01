@@ -10,7 +10,6 @@ import type { Styles } from "./styles";
 
 type Ui = { theme: PluginTheme; styles: Styles };
 
-/** Waits for the typing to stop before asking GitLab. */
 function useDebounced(value: string, delayMs = 250): string {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -34,10 +33,6 @@ interface PickerProps<Item> {
   ui: Ui;
 }
 
-/**
- * Edit a set: what is selected now as removable chips, a search box, and the
- * results to toggle. Saved as a whole, the way GitLab's sidebar dropdowns do.
- */
 function Picker<Item>({
   title,
   open,
@@ -64,7 +59,6 @@ function Picker<Item>({
       setTerm("");
       setError(null);
     }
-    // Reset only when the dialog opens, not on every refetch of `initial`.
   }, [open]);
 
   const results = useQuery({

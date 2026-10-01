@@ -111,12 +111,9 @@ import {
 } from "./queries";
 
 const LOG_TIMEOUT_MS = 30_000;
-/** Past this a file is shown from its diff only; expanding context would freeze the panel. */
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
-/** A folder with more than 1000 entries is shown in part, with a link to GitLab. */
 const MAX_TREE_PAGES = 10;
 const COMMITS_PER_PAGE = 40;
-/** Cards per column page; GitLab's own board loads 20 at a time too. */
 const BOARD_PAGE_SIZE = 20;
 
 interface RawCommit {
@@ -145,13 +142,11 @@ function projectPath(path: string): string {
   return `/projects/${encodeURIComponent(path)}`;
 }
 
-/** Folders before files, each alphabetically, as GitLab lists a folder. */
 function sortEntries(entries: TreeEntry[]): TreeEntry[] {
   return entries.sort((a, b) =>
     a.type !== b.type ? (a.type === "tree" ? -1 : 1) : a.name.localeCompare(b.name),
   );
 }
-/** "Show the full log": still bounded, so a runaway job cannot freeze the panel. */
 const FULL_LOG_LINES = 50_000;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const SAVED_QUERY_LIMIT = 30;
@@ -160,7 +155,6 @@ function mergeRequestPath(ref: { projectPath: string; iid: string }): string {
   return `/projects/${encodeURIComponent(ref.projectPath)}/merge_requests/${encodeURIComponent(ref.iid)}`;
 }
 
-/** REST names a discussion by its hash; GraphQL wraps the same hash in a global id. */
 export function discussionHash(discussionId: string): string {
   return discussionId.replace(/^gid:\/\/gitlab\/Discussion\//, "");
 }
@@ -190,7 +184,6 @@ function toDraftNote(raw: RawDraftNote): DraftNote {
 }
 const LISTS_CACHE_MS = 60_000;
 
-/** Every mutation here answers `{ <name>: { errors } }`; one check for all of them. */
 async function mutate(
   connection: Connection,
   deps: AuthDeps,
@@ -208,7 +201,6 @@ async function mutate(
   return { ok: true };
 }
 
-/** The lists need the username; asking for it once per connection is enough. */
 const usernames = new Map<string, string>();
 
 async function usernameFor(connection: Connection, deps: AuthDeps): Promise<string> {
@@ -578,7 +570,6 @@ export function createHandlers(deps: AuthDeps) {
             {
               projectPath: input.projectPath,
               iid: input.iid,
-              // Merges exactly what was reviewed; a push since then makes GitLab refuse.
               sha: detail.diffRefs.headSha,
               strategy: input.action === "auto_merge" ? "MERGE_WHEN_CHECKS_PASS" : null,
             },
@@ -1080,7 +1071,6 @@ export function createHandlers(deps: AuthDeps) {
           webUrl: branch.web_url,
           commit: toCommit(branch.commit),
         }))
-        // The default branch first, then the most recently committed to.
         .sort((a, b) =>
           a.isDefault !== b.isDefault
             ? a.isDefault
@@ -1321,7 +1311,6 @@ export function createHandlers(deps: AuthDeps) {
     },
   };
 
-  /** The picker searches as you type; the lists behind its defaults change far more slowly. */
   let listsCache: { at: number; lists: Promise<Lists> } | null = null;
   function cachedLists(): Promise<Lists> {
     if (!listsCache || Date.now() - listsCache.at > LISTS_CACHE_MS) {

@@ -24,13 +24,11 @@ import type { Styles } from "./styles";
 
 type Ui = { theme: PluginTheme; styles: Styles; workspaceId: string };
 
-/** Fast while something is moving, slow once it has settled. */
 const ACTIVE_REFRESH_MS = 5_000;
 const IDLE_REFRESH_MS = 30_000;
 
 const MONO = Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, monospace", default: "Menlo" });
 
-/** `refs/merge-requests/46577/head` → `!46577`; branches and tags stay as they are. */
 function refLabel(ref: string): string {
   const mergeRequest = ref.match(/^refs\/merge-requests\/(\d+)\//);
   return mergeRequest ? `!${mergeRequest[1]}` : ref.replace(/^refs\/(heads|tags)\//, "");
@@ -305,7 +303,6 @@ export function JobLogView({
   const { styles, theme } = ui;
   const readLog = useRpc(jobLogRpc);
   const scroll = useRef<NativeScrollView | null>(null);
-  // Follows the tail like GitLab does, until the log stops growing.
   const following = useRef(true);
   const [full, setFull] = useState(false);
   const query = useQuery({

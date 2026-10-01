@@ -1,18 +1,12 @@
 import type { DiffFile } from "../../shared/contract";
 
 export interface TreeNode {
-  /** One path segment, or several joined when a folder holds only another folder. */
   name: string;
   path: string;
   children: TreeNode[];
   file: DiffFile | null;
 }
 
-/**
- * The changed files as a folder tree, the way GitLab's file browser shows them:
- * folders before files, and a chain of single-folder directories collapsed into
- * one row (`services/ws-support-ai/src`).
- */
 export function buildTree(files: DiffFile[]): TreeNode[] {
   const root: TreeNode = { name: "", path: "", children: [], file: null };
   for (const file of files) {

@@ -53,12 +53,6 @@ function Choice({
   );
 }
 
-/**
- * "Submit your review", as GitLab does it, with a second destination: the
- * collected comments go either to one of this workspace's agents, as one message
- * with every file, line and code excerpt, or to GitLab as your review, published
- * together so the author gets one notification.
- */
 export function SubmitReview({
   open,
   onClose,
@@ -70,7 +64,6 @@ export function SubmitReview({
   ui,
 }: {
   open: boolean;
-  /** This workspace is a checkout of the MR's source branch: its agent is the one to fix things. */
   ownsBranch: boolean;
   onClose: () => void;
   detail: Detail;
@@ -93,7 +86,6 @@ export function SubmitReview({
   const [submitting, setSubmitting] = useState(false);
 
   const agents = useWorkspaceAgents(workspaceId, open);
-  // Someone else's MR is reviewed on GitLab; your own goes back to the agent working on it.
   const target = chosenTarget ?? (ownsBranch && agents.data?.length !== 0 ? "agent" : "gitlab");
   const chosenAgent = agentId ?? preferredAgent(workspaceId, agents.data)?.id ?? null;
 
@@ -115,7 +107,6 @@ export function SubmitReview({
         );
       } else {
         const ref = { projectPath: detail.projectPath, iid: detail.iid };
-        // One draft per comment, then one publish: GitLab sends a single notification for the lot.
         for (const comment of comments) {
           const first = comment.lines[0]!;
           const last = comment.lines[comment.lines.length - 1]!;
@@ -140,7 +131,6 @@ export function SubmitReview({
             end: pick(last),
             asDraft: true,
           });
-          // Taken off the local list as soon as GitLab holds it, so a failure halfway loses nothing.
           removePendingComments(reviewId, [comment.id]);
         }
         if (summary.trim()) {

@@ -14,7 +14,6 @@ import { JobLogView, PipelineView } from "./pipeline";
 import { detailKey, STATUS_KEY } from "./queries";
 import { useStyles } from "./styles";
 
-/** What a tab shows: the item, or a pipeline or job opened from it. Back pops one level. */
 type Screen =
   | { kind: "pipeline"; ref: PipelineRef }
   | { kind: "job"; projectPath: string; job: Job; pipelineIid: string | null };
@@ -34,7 +33,6 @@ function TabTitle({
 }) {
   const { styles, theme } = ui;
   const readDetail = useRpc(detailRpc);
-  // Shares the cache with the tab's own detail view, so this costs nothing once the tab has loaded.
   const detail = useQuery({
     queryKey: detailKey(tab.ref),
     queryFn: () => readDetail(tab.ref),
@@ -204,7 +202,6 @@ function ItemPanelContent({ theme, workspaceId }: PluginWorkspacePanelProps) {
   );
 }
 
-/** Issues and merge requests opened in the main area, each in a tab of its own. */
 export function ItemPanel(props: PluginWorkspacePanelProps) {
   return (
     <AccountScope workspaceId={props.workspaceId}>

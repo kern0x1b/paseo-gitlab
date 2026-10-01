@@ -28,11 +28,6 @@ interface AgentChoice {
   lastActivityAt: string;
 }
 
-/**
- * Hands an issue, MR or failed job to an agent in this workspace: either an agent
- * already running here, or a new one started with the settings of the most
- * recent one, so it gets the same provider, model and permission mode.
- */
 function AgentPicker({
   open,
   onClose,
@@ -176,7 +171,6 @@ export function SendToAgentButton({
 }: {
   workspaceId: string;
   subject: AgentSubject;
-  /** A labelled button instead of the robot icon. */
   label?: string;
   ui: Ui;
 }) {

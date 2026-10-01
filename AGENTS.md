@@ -46,9 +46,8 @@ visual, reload the plugin and confirm in Paseo before claiming it works.
 - **Prettier**, `printWidth` 110 (`.prettierrc.json`). Run it on files you touch.
 - **Conventional Commits**, subject lowercased, ≤ 100 chars. Enforced by
   `.githooks/commit-msg` (installed via `npm install`'s `prepare`).
-- **Comments explain why, not what**, and only where the reason is not obvious from
-  the code. Match the density of the surrounding file.
-- **English everywhere** in code, comments and commits.
+- **Self-documenting code.** The codebase is clean and comment-free; code should be self-explanatory through clear naming and structure.
+- **English everywhere** in code, documentation and commits.
 - Prefer small, surgical changes; do not reformat or refactor code you are not
   changing.
 

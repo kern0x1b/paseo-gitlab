@@ -1,8 +1,3 @@
-/**
- * The diff highlighter: tokens by language, and block comments across lines.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { highlightLine, languageOf } from "../client/ui/highlight";

@@ -2,10 +2,6 @@ import { defineRpc as defineSdkRpc, PluginAttachmentSearchPayloadSchema } from "
 import type { ZodType } from "zod";
 import { z } from "zod";
 
-/**
- * Every RPC takes an optional `account`: the GitLab host the calling panel works
- * with. The server runs the request as that account; without it, the default one.
- */
 const AccountFieldSchema = z.object({ account: z.string().optional() });
 
 function defineRpc<InputSchema extends ZodType, OutputSchema extends ZodType>(definition: {
@@ -16,16 +12,9 @@ function defineRpc<InputSchema extends ZodType, OutputSchema extends ZodType>(de
   return defineSdkRpc({ ...definition, input: z.intersection(definition.input, AccountFieldSchema) });
 }
 
-/**
- * Everything the client and the plugin server exchange. The token never appears
- * here: it goes in once through `auth.connect` and stays on the server, in the
- * Keychain.
- */
-
 export const PersonSchema = z.object({
   username: z.string(),
   name: z.string(),
-  /** Absolute (gravatar) or relative to the GitLab host (uploaded avatars). */
   avatarUrl: z.string().nullish(),
 });
 
@@ -37,7 +26,6 @@ export const LabelSchema = z.object({
 
 export const ItemKindSchema = z.enum(["issue", "mr"]);
 
-/** Enough to address an item again: GraphQL looks issues and MRs up by project path and iid. */
 export const ItemRefSchema = z.object({
   kind: ItemKindSchema,
   projectPath: z.string(),
@@ -55,15 +43,12 @@ export const ListItemSchema = ItemRefSchema.extend({
   confidential: z.boolean(),
   pipelineStatus: z.string().nullable(),
   mergeStatus: z.string().nullable(),
-  /** Why the item is in the list: an issue or MR can be yours as author, as assignee, or both. */
   roles: z.array(z.enum(["author", "assignee"])),
   author: PersonSchema.nullable(),
   assignees: z.array(PersonSchema),
-  /** MRs only. */
   reviewers: z.array(PersonSchema),
 });
 
-/** A GitLab to-do: a mention, an assignment, a review request, a failed pipeline. */
 export const TodoSchema = z.object({
   id: z.string(),
   action: z.string(),
@@ -73,7 +58,6 @@ export const TodoSchema = z.object({
   title: z.string(),
   reference: z.string().nullable(),
   webUrl: z.string().nullable(),
-  /** Set when the target is an issue or MR the panel can open. */
   target: ItemRefSchema.nullable(),
 });
 
@@ -84,10 +68,8 @@ export const ListsSchema = z.object({
   reviewMergeRequests: z.array(ListItemSchema),
 });
 
-/** One emoji on a note or MR, with who gave it. */
 export const ReactionSchema = z.object({ name: z.string(), emoji: z.string(), users: z.array(z.string()) });
 
-/** Where a code comment sits: the file and the line on either side of the diff. */
 export const NotePositionSchema = z.object({
   path: z.string(),
   newLine: z.number().nullable(),
@@ -98,15 +80,12 @@ export const NoteSchema = z.object({
   id: z.string(),
   author: PersonSchema.nullable(),
   createdAt: z.string(),
-  /** Markdown source, for editing. */
   body: z.string(),
   bodyHtml: z.string(),
   system: z.boolean(),
-  /** GitLab's `adminNote`: your own notes, or any note if you administer the project. */
   canEdit: z.boolean(),
   position: NotePositionSchema.nullable(),
   reactions: z.array(z.lazy(() => ReactionSchema)),
-  /** Suggested changes in the note; applying one commits it to the source branch. */
   suggestions: z.array(z.object({ id: z.string(), applied: z.boolean() })),
 });
 
@@ -122,13 +101,10 @@ export const DetailLabelSchema = LabelSchema.extend({ id: z.string() });
 export const DiffRefsSchema = z.object({ baseSha: z.string(), headSha: z.string(), startSha: z.string() });
 
 export const DetailSchema = ItemRefSchema.extend({
-  /** Global id; `createNote` addresses the issue or MR by it. */
   id: z.string(),
   canEdit: z.boolean(),
   canComment: z.boolean(),
-  /** Markdown source, for editing. */
   description: z.string(),
-  /** MRs only: the commits a code comment is anchored to. */
   diffRefs: DiffRefsSchema.nullable(),
   reference: z.string(),
   title: z.string(),
@@ -149,15 +125,12 @@ export const DetailSchema = ItemRefSchema.extend({
   mergeStatus: z.string().nullable(),
   approved: z.boolean().nullable(),
   discussions: z.array(DiscussionSchema),
-  /** The connected user, for "you approved" and your own reactions. */
   viewer: z.string(),
   approvedBy: z.array(z.string()),
   canApprove: z.boolean(),
   canMerge: z.boolean(),
-  /** Pushing to the source branch is what applying a suggestion or rebasing needs. */
   canPush: z.boolean(),
   mergeable: z.boolean(),
-  /** The source branch cannot merge cleanly into the target; GitLab offers no API to resolve it. */
   hasConflicts: z.boolean(),
   autoMergeEnabled: z.boolean(),
   autoMergeStrategies: z.array(z.string()),
@@ -170,7 +143,6 @@ export const AuthStatusSchema = z.discriminatedUnion("connected", [
   z.object({
     connected: z.literal(false),
     host: z.string().nullable(),
-    /** Why a stored token no longer works, when that is the reason. */
     error: z.string().nullable(),
   }),
   z.object({
@@ -188,7 +160,6 @@ export const AuthStatusSchema = z.discriminatedUnion("connected", [
 export const PipelineRefSchema = z.object({ projectPath: z.string(), iid: z.string() });
 
 export const JobSchema = z.object({
-  /** Global id, e.g. `gid://gitlab/Ci::Build/123`; the mutations take it as is. */
   id: z.string(),
   name: z.string(),
   status: z.string(),
@@ -200,11 +171,9 @@ export const JobSchema = z.object({
   playable: z.boolean(),
   cancelable: z.boolean(),
   webUrl: z.string(),
-  /** Downloadable files the job kept; the log itself is left out. */
   artifacts: z.array(
     z.object({ name: z.string(), fileType: z.string(), size: z.number().nullable(), url: z.string() }),
   ),
-  /** A trigger job's child or multi-project pipeline. */
   downstream: PipelineRefSchema.extend({ status: z.string() }).nullable(),
 });
 
@@ -233,7 +202,6 @@ export const PipelineSchema = PipelineRefSchema.extend({
 export const LogColorSchema = z.enum(["red", "green", "yellow", "blue", "magenta", "cyan", "gray"]);
 
 export const LogLineSchema = z.object({
-  /** Set for a `section_start` marker: the line is the section's title. */
   section: z.boolean(),
   segments: z.array(z.object({ text: z.string(), color: LogColorSchema.nullable(), bold: z.boolean() })),
 });
@@ -268,7 +236,6 @@ export type JobLog = z.output<typeof JobLogSchema>;
 
 export const authStatusRpc = defineRpc({
   name: "auth.status",
-  // Settings names each account itself, one card per connected GitLab.
   input: AccountFieldSchema,
   output: AuthStatusSchema,
 });
@@ -281,7 +248,6 @@ export const authConnectRpc = defineRpc({
 
 export const authDisconnectRpc = defineRpc({
   name: "auth.disconnect",
-  // Settings names each account itself, one card per connected GitLab.
   input: AccountFieldSchema,
   output: AuthStatusSchema,
 });
@@ -303,9 +269,7 @@ export const addNoteRpc = defineRpc({
   input: z.object({
     noteableId: z.string(),
     body: z.string().min(1),
-    /** Set to reply inside a thread. */
     discussionId: z.string().optional(),
-    /** Without `discussionId`: a plain comment, or a new resolvable thread. */
     mode: z.enum(["comment", "thread"]).default("comment"),
   }),
   output: z.object({ ok: z.literal(true) }),
@@ -329,7 +293,6 @@ export const updateItemRpc = defineRpc({
     title: z.string().min(1).optional(),
     description: z.string().optional(),
     state: z.enum(["close", "reopen"]).optional(),
-    /** MRs only. */
     draft: z.boolean().optional(),
   }),
   output: z.object({ ok: z.literal(true) }),
@@ -366,10 +329,6 @@ export const DiffLineSchema = z.object({
   kind: z.enum(["hunk", "context", "added", "removed"]),
   oldLine: z.number().nullable(),
   newLine: z.number().nullable(),
-  /**
-   * Where the line sits on both sides even when it exists on only one: GitLab's
-   * `line_code` for multi-line comments is built from these two counters.
-   */
   oldPos: z.number(),
   newPos: z.number(),
   text: z.string(),
@@ -383,7 +342,6 @@ export const DiffFileSchema = z.object({
   renamedFile: z.boolean(),
   additions: z.number(),
   deletions: z.number(),
-  /** Too large or collapsed by GitLab: no lines, only a link. */
   truncated: z.boolean(),
   lines: z.array(DiffLineSchema),
 });
@@ -405,7 +363,6 @@ export const addDiffNoteRpc = defineRpc({
     diffRefs: DiffRefsSchema,
     oldPath: z.string(),
     newPath: z.string(),
-    /** An added line has only `newLine`, a removed one only `oldLine`, context both. */
     oldLine: z.number().nullable(),
     newLine: z.number().nullable(),
   }),
@@ -421,14 +378,9 @@ export const resolveRpc = defineRpc({
 export const imageRpc = defineRpc({
   name: "gitlab.image",
   input: z.object({ src: z.string() }),
-  /** Null when GitLab will not hand the file to this token; the client links to it instead. */
   output: z.object({ dataUrl: z.string().nullable() }),
 });
 
-/**
- * Client code runs in Paseo's renderer, whose console nobody sees. Failures it
- * cannot show on screen are reported here and land in `paseo plugin logs gitlab`.
- */
 export const clientLogRpc = defineRpc({
   name: "client.log",
   input: z.object({ message: z.string().max(2000) }),
@@ -443,7 +395,6 @@ export const pipelineRpc = defineRpc({
 
 export const jobLogRpc = defineRpc({
   name: "gitlab.job.log",
-  /** `full` lifts the usual cap on how many lines come back. */
   input: z.object({ projectPath: z.string(), jobId: z.string(), full: z.boolean().optional() }),
   output: JobLogSchema,
 });
@@ -467,7 +418,6 @@ export const todoDoneRpc = defineRpc({
 });
 
 export const WorkspaceStateSchema = z.object({
-  /** Null when the workspace is not a checkout of a project on the connected GitLab. */
   checkout: z.object({ branch: z.string(), projectPath: z.string() }).nullable(),
   defaultBranch: z.string().nullable(),
   mergeRequest: ListItemSchema.nullable(),
@@ -500,7 +450,6 @@ export const agentPromptRpc = defineRpc({
   output: z.object({ title: z.string(), text: z.string() }),
 });
 
-/** Paseo's attachment picker calls this with `{ query }` as you type after `@GitLab`. */
 export const attachmentSearchRpc = defineRpc({
   name: "gitlab.attachments.search",
   input: z.object({ query: z.string() }),
@@ -610,7 +559,6 @@ export const uploadRpc = defineRpc({
     projectPath: z.string(),
     filename: z.string().min(1).max(200),
     contentType: z.string(),
-    /** Base64 of the file; capped so a pasted screenshot fits and a video does not. */
     base64: z.string().max(14_000_000),
   }),
   output: z.object({ markdown: z.string() }),
@@ -669,7 +617,6 @@ const CodeLineSchema = DiffLineSchema.pick({
   newPos: true,
 });
 
-/** A comment on one line or a range of lines of an MR's diff, published or saved to the review. */
 export const addCodeCommentRpc = defineRpc({
   name: "gitlab.note.code",
   input: z.object({
@@ -686,7 +633,6 @@ export const addCodeCommentRpc = defineRpc({
   output: z.object({ ok: z.literal(true) }),
 });
 
-/** One push to the MR: GitLab keeps a version per head commit it saw. */
 export const MergeRequestVersionSchema = z.object({
   id: z.string(),
   headSha: z.string(),
@@ -706,7 +652,6 @@ export const versionsRpc = defineRpc({
 export const CommitSchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
-  /** The first parent: a comment on the commit's own diff is anchored between the two. */
   parentSha: z.string().nullable(),
   title: z.string(),
   author: z.string(),
@@ -722,7 +667,6 @@ export const commitsRpc = defineRpc({
   output: z.object({ commits: z.array(CommitSchema) }),
 });
 
-/** What the diff panel shows: an MR's whole change, the change between two commits, or one commit. */
 export const DiffScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("mr"), projectPath: z.string(), iid: z.string() }),
   z.object({
@@ -730,7 +674,6 @@ export const DiffScopeSchema = z.discriminatedUnion("kind", [
     projectPath: z.string(),
     from: z.string(),
     to: z.string(),
-    /** Compare from where `to` forked off `from`, as a branch comparison does, not from `from` itself. */
     mergeBase: z.boolean().optional(),
   }),
   z.object({ kind: z.literal("commit"), projectPath: z.string(), sha: z.string() }),
@@ -747,7 +690,6 @@ export const scopedDiffsRpc = defineRpc({
 export const fileLinesRpc = defineRpc({
   name: "gitlab.file.lines",
   input: z.object({ projectPath: z.string(), path: z.string(), ref: z.string() }),
-  /** The file split into lines, or null when it is binary or too large to show. */
   output: z.object({ lines: z.array(z.string()).nullable() }),
 });
 
@@ -818,7 +760,6 @@ export const accountsRpc = defineRpc({
   output: z.object({
     hosts: z.array(z.string()),
     active: z.string().nullable(),
-    /** The connected GitLab the directory's `origin` points at, if any. */
     forDirectory: z.string().nullable(),
   }),
 });
@@ -833,15 +774,12 @@ export const boardsRpc = defineRpc({
   output: z.object({ boards: z.array(BoardSummarySchema) }),
 });
 
-/** A column of an issue board: open issues without a list label, one label, or closed issues. */
 export const BoardColumnSchema = z.object({
   id: z.string(),
   title: z.string(),
-  /** GitLab's `listType`: `backlog` (Open), `label`, `closed`; EE adds assignee and milestone lists. */
   listType: z.string(),
   collapsed: z.boolean(),
   issuesCount: z.number(),
-  /** With its id: a new issue created in the column carries the label. */
   label: DetailLabelSchema.nullable(),
 });
 
@@ -853,11 +791,6 @@ export const boardColumnsRpc = defineRpc({
   output: z.object({ columns: z.array(BoardColumnSchema) }),
 });
 
-/**
- * The board's search bar. `assignee`: anyone (null), nobody (`@none`), anybody (`@any`) or a
- * username. `author`: a username or null. `milestone`: any (null), none (`@none`), set (`@any`),
- * started (`@started`), upcoming (`@upcoming`) or a title.
- */
 export const BoardFiltersSchema = z.object({
   search: z.string(),
   assignee: z.string().nullable(),
@@ -869,7 +802,6 @@ export const BoardFiltersSchema = z.object({
 export type BoardFilters = z.output<typeof BoardFiltersSchema>;
 
 export const BoardCardSchema = z.object({
-  /** Global id; a move is placed before or after another card by it. */
   id: z.string(),
   kind: z.literal("issue"),
   projectPath: z.string(),
@@ -892,7 +824,6 @@ export const boardCardsRpc = defineRpc({
   input: z.object({ columnId: z.string(), after: z.string().nullable(), filters: BoardFiltersSchema }),
   output: z.object({
     cards: z.array(BoardCardSchema),
-    /** How many issues match the filters, across every page. */
     count: z.number(),
     endCursor: z.string().nullable(),
     hasNextPage: z.boolean(),
@@ -907,7 +838,6 @@ export const moveBoardCardRpc = defineRpc({
     boardId: z.string(),
     fromColumnId: z.string(),
     toColumnId: z.string(),
-    /** Where in the target column: before or after another card's global id; neither puts it on top. */
     moveBeforeId: z.string().optional(),
     moveAfterId: z.string().optional(),
   }),

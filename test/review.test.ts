@@ -1,8 +1,3 @@
-/**
- * The review writes that go over REST, and grouping awards into reaction chips.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createHandlers, discussionHash } from "../server/handlers";

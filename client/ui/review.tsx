@@ -18,7 +18,6 @@ import type { Styles } from "./styles";
 type Ui = { theme: PluginTheme; styles: Styles };
 type Write = (work: () => Promise<unknown>) => Promise<void>;
 
-/** The emoji GitLab offers first in its picker, by the names its API takes. */
 const COMMON_REACTIONS: { name: string; emoji: string }[] = [
   { name: "thumbsup", emoji: "👍" },
   { name: "thumbsdown", emoji: "👎" },
@@ -102,7 +101,6 @@ export function Reactions({
   );
 }
 
-/** Approve, merge, auto-merge and rebase, each shown only when GitLab would accept it. */
 export function MergePanel({
   detail,
   write,
@@ -234,10 +232,6 @@ export function draftsKey(projectPath: string, iid: string) {
   return ["gitlab", "drafts", projectPath, iid] as const;
 }
 
-/**
- * The pending review: comments saved as drafts and published together, the way
- * GitLab's "Finish review" does, so the author gets one notification, not twenty.
- */
 export function ReviewBar({ detail, write, ui }: { detail: Detail; write: Write; ui: Ui }) {
   const { styles, theme } = ui;
   const readDrafts = useRpc(draftsRpc);

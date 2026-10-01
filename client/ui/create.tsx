@@ -11,7 +11,6 @@ export type CreateTarget =
   | { mode: "issue"; projectPath: string }
   | { mode: "mr"; projectPath: string; sourceBranch: string; targetBranch: string };
 
-/** A new issue in a project, or a new MR from a branch; opens the result when GitLab has it. */
 export function CreateView({
   target,
   onBack,

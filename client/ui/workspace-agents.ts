@@ -9,7 +9,6 @@ export interface WorkspaceAgent {
 
 const PREFERRED_KEY = "paseo-gitlab:review-agent";
 
-/** The agents of a workspace, most recently used first. */
 export function useWorkspaceAgents(workspaceId: string, enabled = true) {
   const paseo = usePaseo();
   return useQuery({
@@ -37,7 +36,6 @@ function preferences(): Record<string, string> {
   }
 }
 
-/** The agent you last sent a review to in this workspace, while it is still there; else the most recent one. */
 export function preferredAgent(
   workspaceId: string,
   agents: WorkspaceAgent[] | undefined,
@@ -52,7 +50,5 @@ export function rememberAgent(workspaceId: string, agentId: string): void {
       PREFERRED_KEY,
       JSON.stringify({ ...preferences(), [workspaceId]: agentId }),
     );
-  } catch {
-    // No storage: the most recent agent is chosen next time.
-  }
+  } catch {}
 }

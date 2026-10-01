@@ -1,6 +1,5 @@
 import type { Detail, DiffFile, DiffLine } from "../../shared/contract";
 
-/** The selected lines of one file, first to last as shown. */
 export interface CodeSelection {
   file: DiffFile;
   lines: DiffLine[];
@@ -16,16 +15,11 @@ export function rangeLabel(lines: DiffLine[]): string {
   return first === last ? `line ${first}` : `lines ${first}–${last}`;
 }
 
-/**
- * GitLab's suggestion block for the selection: the new side of the lines, with
- * `-N+0` reaching up from the anchor (the last line) to the first.
- */
 export function suggestionFor(lines: DiffLine[]): string {
   const kept = lines.filter((line) => line.kind !== "removed");
   return `\`\`\`suggestion:-${Math.max(0, kept.length - 1)}+0\n${kept.map((line) => line.text).join("\n")}\n\`\`\``;
 }
 
-/** The message an agent gets for a comment made in the diff: where, what the code is, and what you said. */
 export function agentMessage(
   detail: Detail,
   selection: CodeSelection,
@@ -54,7 +48,6 @@ export interface ReviewComment {
   body: string;
 }
 
-/** A whole review for an agent: the MR, an optional summary, then every comment with its code. */
 export function reviewMessage(detail: Detail, comments: ReviewComment[], summary: string): string {
   const parts = [
     `Review of ${detail.reference} "${detail.title}"${detail.sourceBranch ? ` on branch ${detail.sourceBranch}` : ""}`,

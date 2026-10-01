@@ -61,7 +61,7 @@ export class McpServer {
             mr_iid: { type: "number", description: "Specific Merge Request IID (e.g. 101)" },
             issue_iid: { type: "number", description: "Specific Issue IID (e.g. 42)" },
             ref: { type: "string", description: "Branch or ref filter (e.g. main or feature branch)" },
-            author: { type: "string", description: "Author username to filter events by (e.g. alex.dev)" },
+            author: { type: "string", description: "Author username to filter events by (e.g. dev.user)" },
             event_type: {
               type: "string",
               description: "Event category filter: all, mr, issue, pipeline, todo, comment (default: all)",
@@ -264,7 +264,6 @@ export class McpServer {
           workHoursOnly: !force && workHoursOnly,
         });
 
-        // Start asynchronously so tool call returns promptly
         this.daemon.start().catch((err) => {
           console.error("[MCP GitLabDaemon Error]", err);
         });
@@ -284,7 +283,6 @@ export class McpServer {
           return { status: "stopped", details: stats };
         }
 
-        // Also check if an external daemon is running via state file
         if (fs.existsSync(STATE_FILE)) {
           try {
             const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -466,7 +464,6 @@ export class McpServer {
             },
           });
         } else if (req.method === "notifications/initialized") {
-          // No-op
         } else if (req.method === "tools/list") {
           sendResponse({
             jsonrpc: "2.0",

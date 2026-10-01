@@ -1,10 +1,5 @@
 import { useSyncExternalStore } from "react";
 
-/**
- * Files you marked "Viewed" in an MR's diff, per MR, each with a fingerprint of
- * the diff you saw: when a push changes the file, the mark lapses by itself.
- * Also when you last reviewed the MR from here, for "changes since your review".
- */
 const VIEWED_KEY = "paseo-gitlab:viewed";
 const REVIEWED_KEY = "paseo-gitlab:reviewed-at";
 const EMPTY: Record<string, string> = {};
@@ -25,9 +20,7 @@ let reviewedAt: Record<string, string> = load(REVIEWED_KEY);
 function persist(key: string, value: unknown): void {
   try {
     globalThis.localStorage?.setItem(key, JSON.stringify(value));
-  } catch {
-    // No storage: the marks last until the window closes.
-  }
+  } catch {}
   for (const listener of listeners) {
     listener();
   }

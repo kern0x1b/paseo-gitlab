@@ -1,13 +1,3 @@
-/**
- * Rebuilds GitLab's rendered HTML from an allowlist before it enters Paseo's
- * window. GitLab sanitizes its own output already; this is the second layer, and
- * the reason it rebuilds rather than filters is that nothing it does not know
- * about can survive: no scripts, no event handlers, no inline styles, no
- * `javascript:` URLs, no forms.
- *
- * Unknown elements (`gl-emoji`, custom wrappers) are unwrapped so their text is
- * kept; the elements below are dropped with everything inside them.
- */
 const DROPPED = new Set([
   "script",
   "style",
@@ -78,9 +68,7 @@ const KEPT = new Set([
 const LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 export interface SanitizeOptions {
-  /** Origin the relative links and image paths resolve against. */
   host: string;
-  /** Called for images on the GitLab host, which need the token to load. */
   loadImage(url: string, image: HTMLImageElement): void;
 }
 
@@ -101,7 +89,6 @@ function positiveInt(raw: string | null): string | null {
 }
 
 function cleanImage(source: Element, options: SanitizeOptions): HTMLImageElement | null {
-  // GitLab lazy-loads: `src` is a 1px placeholder and the real path is in `data-src`.
   const url = safeUrl(source.getAttribute("data-src") ?? source.getAttribute("src"), options.host);
   if (!url || url.startsWith("mailto:")) {
     return null;
@@ -206,7 +193,6 @@ export function sanitizeHtml(html: string, options: SanitizeOptions): DocumentFr
   return fragment;
 }
 
-/** Plain text for clients without a DOM (the native apps). */
 export function htmlToText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, "\n")

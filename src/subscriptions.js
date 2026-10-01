@@ -76,7 +76,6 @@ export class SubscriptionRegistry {
       createdAt: new Date().toISOString(),
     };
 
-    // Remove identical existing subscription to prevent duplicates
     data.subscriptions = (data.subscriptions || []).filter(
       (s) =>
         !(
@@ -127,7 +126,6 @@ export class SubscriptionRegistry {
     const data = this.load();
     const subs = data.subscriptions || [];
 
-    // Score subscriptions by specificity (higher score = more specific match)
     let bestMatch = null;
     let highestScore = -1;
 
@@ -138,33 +136,28 @@ export class SubscriptionRegistry {
 
       let score = 0;
 
-      // 1. MR match
       if (sub.mrIid) {
         if (!event.mrIid || Number(sub.mrIid) !== Number(event.mrIid)) continue;
         score += 100;
       }
 
-      // 2. Issue match
       if (sub.issueIid) {
         if (!event.issueIid || Number(sub.issueIid) !== Number(event.issueIid)) continue;
         score += 100;
       }
 
-      // 3. Ref (branch) match
       if (sub.ref) {
         const evRef = event.ref || event.raw?.ref || event.push_data?.ref;
         if (!evRef || String(sub.ref) !== String(evRef)) continue;
         score += 50;
       }
 
-      // 4. Author match
       if (sub.author) {
         const evAuthor = event.author ? String(event.author).replace(/^@/, "") : "";
         if (evAuthor !== sub.author) continue;
         score += 30;
       }
 
-      // 5. Event Type match
       if (sub.eventType && sub.eventType !== "all") {
         const subType = sub.eventType.toLowerCase();
         const evCat = (event.category || "").toLowerCase();

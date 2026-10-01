@@ -2,7 +2,6 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { useMemo } from "react";
 import { StyleSheet } from "react-native";
 
-/** Paseo's own spacing, type and radius steps, so the panel sits next to Files and Changes without standing out. */
 export const SPACE = { 0.5: 2, 1: 4, 1.5: 6, 2: 8, 3: 12, 4: 16 } as const;
 export const FONT = { xs: 11, sm: 12, base: 13, lg: 15 } as const;
 export const RADIUS = { sm: 4, md: 6, lg: 8, pill: 9999 } as const;

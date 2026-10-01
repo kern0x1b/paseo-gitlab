@@ -51,11 +51,6 @@ function storedTreeWidth(): number {
   return Number.isFinite(raw) && raw >= TREE_WIDTH.min && raw <= TREE_WIDTH.max ? raw : TREE_WIDTH.initial;
 }
 
-/**
- * A thin handle between the tree and the diff; drag it to make the tree wider or narrower.
- * On the web it listens to pointer events itself and turns text selection off while
- * dragging: without that the browser selects every row the pointer passes over.
- */
 function Splitter({ width, onChange, ui }: { width: number; onChange: (width: number) => void; ui: Ui }) {
   const start = useRef(width);
   const [dragging, setDragging] = useState(false);
@@ -139,7 +134,6 @@ function Counts({ file, styles, ui }: { file: DiffFile; styles: Styles; ui: Ui }
 
 type FileFilter = "all" | "unviewed" | "commented";
 
-/** The changed files, as GitLab's file browser shows them: a folder tree or a flat list, with a filter. */
 function FileBrowser({
   files,
   active,
@@ -353,7 +347,6 @@ function MergeRequestPicker({
   );
 }
 
-/** Which of the MR's changes the panel shows. */
 type Scope =
   | { kind: "mr" }
   | { kind: "compare"; from: string; to: string; label: string }
@@ -367,7 +360,6 @@ function scopeId(scope: Scope): string {
       : `commit:${scope.sha}`;
 }
 
-/** The commits a comment on this scope's diff is anchored to, when they differ from the MR's own. */
 function scopeRefs(scope: Scope): { baseSha: string; headSha: string; startSha: string } | null {
   if (scope.kind === "compare") {
     return { baseSha: scope.from, startSha: scope.from, headSha: scope.to };
@@ -412,7 +404,6 @@ function ScopeRow({
   );
 }
 
-/** "Compare": the whole MR, what came since your last review, one push, or one commit. */
 function ScopePicker({
   open,
   onClose,
@@ -636,10 +627,6 @@ function ViewOptions({
   );
 }
 
-/**
- * Keys for the diff, on the web only and only after you last clicked inside it,
- * so typing j into an agent's composer or clicking another panel is left alone.
- */
 function useDiffKeys(root: React.RefObject<View | null>, onKey: (key: string) => boolean) {
   const handler = useRef(onKey);
   handler.current = onKey;
@@ -690,7 +677,6 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
   const directory = useWorkspace(ui.workspaceId, (workspace) => workspace.directory);
   const [scope, setScope] = useState<Scope>({ kind: "mr" });
   const scopeKey = scopeId(scope);
-  // Refreshed so a reviewer's new comments show up under their lines without reopening.
   const detail = useQuery({
     queryKey: detailKey(target),
     queryFn: () => readDetail(target),
@@ -729,9 +715,7 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
     setViewState(next);
     try {
       globalThis.localStorage?.setItem(VIEW_KEY, JSON.stringify(next));
-    } catch {
-      // No storage: the choice lasts until the window closes.
-    }
+    } catch {}
   };
   const [treeWidth, setTreeWidthState] = useState(storedTreeWidth);
   const setTreeWidth = useMemo(
@@ -739,16 +723,13 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
       setTreeWidthState(next);
       try {
         globalThis.localStorage?.setItem(TREE_WIDTH_KEY, String(Math.round(next)));
-      } catch {
-        // No storage: the width lasts until the window closes.
-      }
+      } catch {}
     },
     [],
   );
   const [submitting, setSubmitting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [viewOptions, setViewOptions] = useState(false);
-  // Files opened or closed by hand; the rest are open unless marked viewed.
   const [toggled, setToggled] = useState<Map<string, boolean>>(() => new Map());
   const [active, setActive] = useState<string | null>(null);
   const root = useRef<View | null>(null);
@@ -788,7 +769,6 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
     return counts;
   }, [files, threads]);
 
-  // Your last review: the later of a review sent from here and your last note on the MR.
   const lastNoteAt = (detail.data?.discussions ?? [])
     .flatMap((discussion) => discussion.notes)
     .filter((note) => !note.system && note.author?.username === detail.data?.viewer)
@@ -1129,11 +1109,6 @@ function ReviewDiff({ target, ui, onPickOther }: { target: ItemRef; ui: Ui; onPi
   );
 }
 
-/**
- * An MR's changes in the workspace's main area, next to its agents: a file tree
- * on the left, every file's diff on the right, and comments collected into a
- * review that is then sent to one of your agents or published to GitLab.
- */
 export function DiffPanel(props: PluginWorkspacePanelProps) {
   return (
     <AccountScope workspaceId={props.workspaceId}>

@@ -1,9 +1,5 @@
 import { execFile } from "node:child_process";
 
-/**
- * Which GitLab project and branch a Paseo workspace is on, read from its checkout.
- * Only the configured GitLab host counts: a workspace pushing to GitHub has no MR here.
- */
 const GIT_TIMEOUT_MS = 5000;
 
 export type GitRunner = (directory: string, args: string[]) => Promise<string | null>;
@@ -15,10 +11,6 @@ export const runGit: GitRunner = (directory, args) =>
     });
   });
 
-/**
- * `git@host:group/project.git`, `ssh://git@host:2222/group/project.git` or
- * `https://host/group/project.git` → host name and project path.
- */
 export function parseRemote(remote: string): { hostname: string; path: string } | null {
   const scp = remote.match(/^[\w.-]+@([^:/]+):(.+?)(?:\.git)?\/?$/);
   if (scp) {
@@ -41,7 +33,6 @@ export interface WorkspaceCheckout {
   projectPath: string;
 }
 
-/** Null when the directory is not a checkout of a project on this GitLab, or is on a detached HEAD. */
 export async function readCheckout(
   directory: string,
   host: string,
@@ -61,7 +52,6 @@ export async function readCheckout(
   return { branch, projectPath: parsed.path };
 }
 
-/** Which of the connected GitLabs the directory's `origin` points at. */
 export async function hostForDirectory(
   directory: string,
   hosts: string[],

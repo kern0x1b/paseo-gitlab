@@ -73,11 +73,9 @@ import {
   todoDoneRpc,
 } from "./shared/contract";
 
-/** Server entry: the token and every GitLab request stay on this side. */
 export default function contribute(server: PluginServerContext) {
   const deps = withDemo(defaultAuthDeps());
   const handlers = createHandlers(deps);
-  // Runs each request as the account it names, and hands the handler its input without that field.
   const handle: PluginServerContext["handle"] = (contract, handler) =>
     server.handle(contract, (input, context) => {
       const { account, ...rest } = input as { account?: string };

@@ -1,6 +1,5 @@
 import type { ItemRef, PipelineRef } from "../../shared/contract";
 
-/** Everything under `["gitlab"]`, so a reconnect can drop it all at once. */
 export const STATUS_KEY = ["gitlab", "status"] as const;
 export const LISTS_KEY = ["gitlab", "lists"] as const;
 

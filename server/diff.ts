@@ -3,14 +3,8 @@ import type { DiffFile, DiffLine } from "../shared/contract";
 import type { Connection, Fetch } from "./gitlab";
 import { GitLabError } from "./gitlab";
 
-/**
- * An MR's changes, file by file, as numbered lines a code comment can be anchored
- * to. REST rather than GraphQL: only `GET /merge_requests/:iid/diffs` returns the
- * unified diff text, paginated.
- */
 const PER_PAGE = 50;
 const MAX_PAGES = 10;
-/** A generated or vendored file can be tens of thousands of lines; past this it is a link. */
 const MAX_LINES_PER_FILE = 2000;
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -69,7 +63,6 @@ export function parseUnifiedDiff(diff: string): DiffLine[] {
       oldLine += 1;
       newLine += 1;
     }
-    // `\ No newline at end of file` and the trailing empty split carry nothing to show.
   }
   return lines;
 }
@@ -119,7 +112,6 @@ export async function fetchDiffs(
 
 type CodeLine = Pick<DiffLine, "kind" | "oldLine" | "newLine" | "oldPos" | "newPos">;
 
-/** GitLab's `line_code`: sha1 of the file path, then the line's old and new positions. */
 export function lineCode(path: string, line: CodeLine): string {
   return `${createHash("sha1").update(path).digest("hex")}_${line.oldPos}_${line.newPos}`;
 }
@@ -127,17 +119,12 @@ export function lineCode(path: string, line: CodeLine): string {
 function rangeEnd(path: string, line: CodeLine) {
   return {
     line_code: lineCode(path, line),
-    // GitLab's own frontend sends "new" for added lines and "old" for everything else.
     type: line.kind === "added" ? "new" : "old",
     old_line: line.oldLine,
     new_line: line.newLine,
   };
 }
 
-/**
- * The REST position of a code comment. A single line is anchored by its numbers;
- * a range adds `line_range`, which is what makes GitLab show "Lines 12 to 18".
- */
 export function codePosition(input: {
   diffRefs: { baseSha: string; headSha: string; startSha: string };
   oldPath: string;
@@ -166,7 +153,6 @@ export function codePosition(input: {
   return position;
 }
 
-/** The files changed between two commits, `from` excluded and `to` included. */
 export async function fetchCompare(
   connection: Connection,
   projectPath: string,
@@ -189,7 +175,6 @@ export async function fetchCompare(
   return { files: body.diffs.map(toFile), truncated: Boolean(body.compare_timeout) };
 }
 
-/** The files changed by one commit. */
 export async function fetchCommitDiffs(
   connection: Connection,
   projectPath: string,

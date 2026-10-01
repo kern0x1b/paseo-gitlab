@@ -16,12 +16,6 @@ import type {
   Todo,
 } from "../shared/contract";
 
-/**
- * GraphQL rather than REST: it returns GitLab's own rendered HTML for descriptions
- * and notes (`descriptionHtml`, `bodyHtml`), so references, task lists, tables and
- * code blocks look the way they do on the site without a markdown renderer here.
- */
-
 const PERSON = "username name avatarUrl";
 const LABELS = "labels { nodes { title color textColor } }";
 const LABELS_WITH_ID = "labels { nodes { id title color textColor } }";
@@ -38,11 +32,6 @@ const ISSUE_ROW = `iid title webUrl reference(full: true) updatedAt userNotesCou
 
 const LIST_ARGS = "state: opened, first: 50, sort: UPDATED_DESC";
 
-/**
- * Issues and MRs where you are the author or the assignee, the MRs waiting for
- * your review, and your pending to-dos. Three queries rather than one: with the
- * people on every row, a single query passes GitLab's complexity limit of 250.
- */
 export const LISTS_QUERIES = {
   mergeRequests: `
 query PaseoGitLabMyMergeRequests {
@@ -351,7 +340,6 @@ interface RawAward {
   user: { username: string } | null;
 }
 
-/** GitLab lists one award per user; the UI wants one chip per emoji with its people. */
 export function toReactions(connection: Nodes<RawAward>): Reaction[] {
   const byName = new Map<string, Reaction>();
   for (const award of nodes(connection)) {
@@ -441,7 +429,6 @@ function nodes<T>(connection: Nodes<T>): T[] {
   return connection?.nodes ?? [];
 }
 
-/** `group/sub/project#12` or `group/project!34` → `group/sub/project`. */
 export function projectPathOf(reference: string): string {
   const match = reference.match(/^(.*)[#!]\d+$/);
   return match?.[1] ?? reference;
@@ -473,7 +460,6 @@ function toListItem(kind: ItemKind, row: RawRow, roles: ListItem["roles"]): List
   };
 }
 
-/** Authored and assigned merged into one list, newest first, each item once with both roles. */
 function mine(kind: ItemKind, authored: RawRow[], assigned: RawRow[]): ListItem[] {
   const byReference = new Map<string, ListItem>();
   for (const [rows, role] of [
@@ -541,7 +527,6 @@ function toDiscussion(raw: RawDiscussion): Discussion {
       bodyHtml: note.bodyHtml ?? "",
       system: note.system,
       canEdit: note.userPermissions?.adminNote ?? false,
-      // Image notes on designs carry a position too, but no line to show.
       position:
         note.position && note.position.positionType === "text"
           ? { path: note.position.filePath, newLine: note.position.newLine, oldLine: note.position.oldLine }
@@ -657,7 +642,6 @@ export function toPipeline(
   };
 }
 
-/** `gid://gitlab/Ci::Build/1042565` → `1042565`, for the REST trace endpoint. */
 export function numericId(globalId: string): string | null {
   const match = globalId.match(/\/(\d+)$/);
   return match?.[1] ?? null;
@@ -722,11 +706,6 @@ export function searchHits(raw: RawSearchItems): ItemRef[] {
   ];
 }
 
-/**
- * What a typed reference points at: `!12`, `#34`, `group/project!12`, or a full
- * issue, MR or job URL on the connected host. Bare numbers resolve against the
- * default project.
- */
 export type ParsedReference =
   { kind: "item"; ref: ItemRef } | { kind: "job"; projectPath: string; jobId: string } | null;
 
@@ -746,9 +725,7 @@ export function parseReference(query: string, host: string, defaultProject: stri
       return { kind: "job", projectPath, jobId: `gid://gitlab/Ci::Build/${id}` };
     }
     return { kind: "item", ref: { kind: type === "issues" ? "issue" : "mr", projectPath, iid: id } };
-  } catch {
-    // Not a URL; try a reference.
-  }
+  } catch {}
   const reference = text.match(/^([\w./-]+)?([#!])(\d+)$/);
   if (!reference) {
     return null;
@@ -793,7 +770,6 @@ mutation PaseoGitLabToggleReaction($awardableId: AwardableID!, $name: String!) {
   awardEmojiToggle(input: { awardableId: $awardableId, name: $name }) { ${MUTATION_RESULT} }
 }`;
 
-/** A number is looked up as an iid, anything else as a title search. */
 export const REFERENCE_SEARCH_QUERY = {
   issue: `
 query PaseoGitLabIssueRefs($path: ID!, $search: String, $iids: [String!]) {
@@ -850,7 +826,6 @@ export function searchVariables(query: {
   return {
     path: query.projectPath,
     search: query.search.trim() || null,
-    // Issues have no "merged" state; asking for it means closed.
     state:
       query.state === "all"
         ? null
@@ -899,7 +874,6 @@ query PaseoGitLabBoardColumns($path: ID!, $id: BoardID!) {
   }
 }`;
 
-/** One page of a column; the list's own label is dropped from each card, as GitLab does. */
 export const BOARD_CARDS_QUERY = `
 query PaseoGitLabBoardCards($id: ListID!, $first: Int!, $after: String, $filters: BoardIssueInput) {
   boardList(id: $id) {
@@ -1043,7 +1017,6 @@ export function toBoardCards(raw: RawBoardCards): {
   };
 }
 
-/** The board's search bar as GitLab's `BoardIssueInput`; empty filters send nothing. */
 export function boardFilterVariables(filters: BoardFilters): Record<string, unknown> | null {
   const input: Record<string, unknown> = {};
   if (filters.search.trim()) {

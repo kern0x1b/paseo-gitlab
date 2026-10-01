@@ -57,30 +57,25 @@ test("a delivery failure keeps the alert pending and retries on the next failing
 
   const failure = [{ source: "todos", error: new Error("boom") }];
 
-  // First failing tick starts the streak; below threshold, no dispatch yet.
   await daemon.handlePollFailure(failure);
   assert.equal(calls.length, 0);
 
-  // Past threshold, but sendToPaseo fails: dispatch is attempted, alert stays undelivered.
   clock.advance(150);
   await daemon.handlePollFailure(failure);
   assert.equal(calls.length, 1);
   assert.equal(daemon.health.alertDelivered, false);
 
-  // Still failing: must retry, not skip, because the previous attempt never delivered.
   clock.advance(10);
   await daemon.handlePollFailure(failure);
   assert.equal(calls.length, 2);
   assert.equal(daemon.health.alertDelivered, false);
 
-  // Now delivery succeeds: alert is finally marked delivered.
   failNextSend = false;
   clock.advance(10);
   await daemon.handlePollFailure(failure);
   assert.equal(calls.length, 3);
   assert.equal(daemon.health.alertDelivered, true);
 
-  // Further failures must not re-dispatch until a recovery.
   clock.advance(10);
   await daemon.handlePollFailure(failure);
   assert.equal(calls.length, 3);
@@ -102,9 +97,9 @@ test("a catch-all subscription does not receive health events, only the coordina
   });
 
   const failure = [{ source: "events", error: new Error("502") }];
-  await daemon.handlePollFailure(failure); // starts the streak
+  await daemon.handlePollFailure(failure);
   clock.advance(200);
-  await daemon.handlePollFailure(failure); // past threshold
+  await daemon.handlePollFailure(failure);
 
   assert.deepEqual(calls, ["COORD"]);
 });
@@ -124,9 +119,9 @@ test("the alert names the failing check and its error", async () => {
   });
 
   const failure = [{ source: "pipelines", error: new Error("GitLab API error 403 (Forbidden)") }];
-  await daemon.handlePollFailure(failure); // starts the streak
+  await daemon.handlePollFailure(failure);
   clock.advance(200);
-  await daemon.handlePollFailure(failure); // past threshold, dispatches
+  await daemon.handlePollFailure(failure);
 
   assert.ok(prompt, "expected a prompt to be dispatched");
   assert.match(prompt, /pipelines/);
@@ -153,9 +148,9 @@ test("recovered message names what recovered and retries if delivery fails first
   });
 
   const failure = [{ source: "pipelines", error: new Error("403") }];
-  await daemon.handlePollFailure(failure); // starts the streak
+  await daemon.handlePollFailure(failure);
   clock.advance(200);
-  await daemon.handlePollFailure(failure); // alert delivered
+  await daemon.handlePollFailure(failure);
   assert.equal(daemon.health.alertDelivered, true);
 
   await daemon.handlePollSuccess();

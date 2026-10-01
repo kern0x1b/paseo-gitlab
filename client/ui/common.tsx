@@ -48,7 +48,6 @@ export function PipelineDot({
   ) : null;
 }
 
-/** The connected GitLab, so relative avatar paths resolve without threading the host everywhere. */
 export const HostContext = createContext<string>("");
 
 function avatarSource(person: Person | null, host: string): string | null {
@@ -64,7 +63,6 @@ function avatarSource(person: Person | null, host: string): string | null {
   }
 }
 
-/** The person's GitLab avatar, or their initials when there is none or it fails to load. */
 export function Avatar({
   person,
   styles,
@@ -97,7 +95,6 @@ export function Avatar({
   );
 }
 
-/** Overlapping avatars for a row; the names are in the accessibility label and the detail view. */
 export function AvatarStack({ people, styles, max = 4 }: { people: Person[]; styles: Styles; max?: number }) {
   const shown = people.slice(0, max);
   return (
@@ -117,7 +114,6 @@ export function AvatarStack({ people, styles, max = 4 }: { people: Person[]; sty
   );
 }
 
-/** Avatar and name, for the detail view where there is room to say who. */
 export function PersonChip({ person, styles }: { person: Person; styles: Styles }) {
   return (
     <View style={[styles.badge, { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: 2 }]}>
@@ -142,7 +138,6 @@ export function IconButton({
   theme: PluginTheme;
   styles: Styles;
   disabled?: boolean;
-  /** A toggle that is on: painted like a pressed button. */
   active?: boolean;
 }) {
   return (
@@ -210,10 +205,6 @@ export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * A button that asks first. For anything that is hard to take back or that other
- * people see at once: merging, approving, closing.
- */
 export function ConfirmButton({
   label,
   title,

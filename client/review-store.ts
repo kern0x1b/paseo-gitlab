@@ -1,22 +1,14 @@
 import { useSyncExternalStore } from "react";
 import type { DiffLine, ItemRef } from "../shared/contract";
 
-/**
- * Comments you are collecting on an MR's diff before deciding where they go: to
- * one of your agents, or to GitLab as a review. Kept on this machine, per MR, so
- * a reload or a detour to another MR does not lose them.
- */
 export interface PendingComment {
   id: string;
   oldPath: string;
   newPath: string;
-  /** The selected lines, first to last, as the diff showed them. */
   lines: DiffLine[];
   body: string;
   createdAt: string;
-  /** Which diff it was written on, when not the MR's whole change: "compare:<from>..<to>" or "commit:<sha>". */
   scope?: string;
-  /** The commits that diff compares, when not the MR's own; a GitLab comment is anchored to them. */
   refs?: { baseSha: string; headSha: string; startSha: string };
 }
 
@@ -48,9 +40,7 @@ function save(key: string, comments: PendingComment[]): void {
   reviews = next;
   try {
     globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(reviews));
-  } catch {
-    // No storage: the review lasts until the window closes.
-  }
+  } catch {}
   for (const listener of listeners) {
     listener();
   }
@@ -88,7 +78,6 @@ export function usePendingComments(key: string): PendingComment[] {
   );
 }
 
-/** Whether a pending comment ends on this diff line, which is where it is shown. */
 export function endsAt(comment: PendingComment, line: DiffLine): boolean {
   const last = comment.lines[comment.lines.length - 1];
   return Boolean(

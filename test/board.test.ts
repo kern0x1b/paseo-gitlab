@@ -1,8 +1,3 @@
-/**
- * The issue board: its columns, its cards, and the search bar as GitLab's board filter.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { boardFilterVariables, toBoardCards, toBoardColumns } from "../server/queries";

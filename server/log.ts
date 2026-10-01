@@ -1,17 +1,5 @@
 import type { JobLog, LogColor, LogLine } from "../shared/contract";
 
-/**
- * Turns a raw job trace into lines the client can paint without a terminal.
- *
- * What the runner writes, and what happens to it here:
- * - `2026-09-23T14:09:44.898508Z 00O ` — a timestamp prefix on every line when the
- *   runner has timestamps on. Dropped; `00O+` marks a continuation of the
- *   previous line, which is appended to it rather than starting a new one.
- * - `section_start:<ts>:<name>\r\e[0K<title>` — becomes a section title line;
- *   `section_end` markers are dropped.
- * - ANSI SGR colours and bold — kept as segments; every other escape is dropped.
- * - `\r` inside a line (progress bars) — only what was drawn last is kept.
- */
 export const MAX_LOG_LINES = 3000;
 
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z [0-9a-f]{2}[OE](\+?) ?/;
@@ -63,7 +51,6 @@ function applySgr(codes: string, style: Style): Style {
   return { color, bold };
 }
 
-/** Segments for one physical line, carrying the style over from the previous one. */
 function segmentsOf(text: string, style: Style): { segments: LogLine["segments"]; style: Style } {
   const segments: LogLine["segments"] = [];
   let current = style;
@@ -103,8 +90,6 @@ export function parseJobLog(raw: string, maxLines: number = MAX_LOG_LINES): JobL
       section = true;
     }
     text = text.replace(SECTION_END, "");
-    // A progress bar redraws itself after `\r`; keep only the final drawing. A
-    // trailing `\r` is a CRLF ending, not a redraw.
     text = text.replace(/\r+$/, "");
     const redraw = text.lastIndexOf("\r");
     if (redraw >= 0) {
@@ -126,7 +111,6 @@ export function parseJobLog(raw: string, maxLines: number = MAX_LOG_LINES): JobL
     const parsed = segmentsOf(text, style);
     style = parsed.style;
     if (section && parsed.segments.every((segment) => !segment.text.trim())) {
-      // A section marker whose title was empty says nothing on its own.
       continue;
     }
     lines.push({ section, segments: parsed.segments });

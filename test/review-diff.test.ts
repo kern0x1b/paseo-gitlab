@@ -1,8 +1,3 @@
-/**
- * The diff panel's file tree and the message a whole review becomes for an agent.
- *
- * Run: npm test
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { reviewMessage } from "../client/ui/code-comment";

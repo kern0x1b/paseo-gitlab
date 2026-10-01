@@ -1,13 +1,7 @@
 import type { Detail, Discussion, JobLog, Pipeline } from "../shared/contract";
 
-/**
- * Plain text an agent can act on: what the item is, where it lives, and what is
- * still open on it. Markdown bodies are passed as written, since agents read
- * Markdown better than GitLab's HTML.
- */
 const LOG_TAIL_LINES = 80;
 const MAX_FAILED_JOBS = 3;
-/** Some descriptions paste whole logs; past this the agent gets the link instead. */
 const MAX_DESCRIPTION_CHARS = 8000;
 
 export function logTail(log: JobLog, lines: number = LOG_TAIL_LINES): string {
@@ -81,7 +75,6 @@ export function itemContext(detail: Detail, failedJobs: FailedJobLog[], withDesc
   return parts.join("\n");
 }
 
-/** The task line an agent gets when handed an item from the panel. */
 export function agentPrompt(detail: Detail, failedJobs: FailedJobLog[]): string {
   const open = unresolvedThreads(detail).length;
   const asks: string[] = [];
@@ -100,7 +93,6 @@ export function agentPrompt(detail: Detail, failedJobs: FailedJobLog[]): string 
   return `${task}\n\n${itemContext(detail, failedJobs)}`;
 }
 
-/** Merge conflicts have no GitLab API: the agent resolves them in its checkout and pushes. */
 export function conflictPrompt(detail: Detail): string {
   const source = detail.sourceBranch ?? "the source branch";
   const target = detail.targetBranch ?? "the target branch";

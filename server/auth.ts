@@ -15,7 +15,6 @@ export function defaultAuthDeps(): AuthDeps {
   return { secrets: defaultSecretStore(), fetch, readHost, writeHost, clearHost };
 }
 
-/** Writing notes and resolving threads need `api`; `read_api` alone would show everything and fail on send. */
 const REQUIRED_SCOPE = "api";
 
 interface TokenSelf {
@@ -30,10 +29,6 @@ interface CurrentUser {
   name: string;
 }
 
-/**
- * `https://gitlab.example.com/some/page` → `https://gitlab.example.com`. Only https
- * is accepted: the token travels in every request.
- */
 export function normalizeHost(input: string): string {
   let url: URL;
   try {
@@ -47,7 +42,6 @@ export function normalizeHost(input: string): string {
   return url.origin;
 }
 
-/** The Keychain account for a host: its name and port, which never need quoting. */
 export function accountFor(host: string): string {
   return new URL(host).host;
 }
@@ -68,7 +62,6 @@ async function describe(connection: Connection, fetchImpl: Fetch): Promise<AuthS
   };
 }
 
-/** The stored connection, or null when there is none. */
 export async function storedConnection(deps: AuthDeps): Promise<Connection | null> {
   const host = deps.readHost();
   if (!host) {
@@ -101,10 +94,6 @@ export async function authStatus(deps: AuthDeps): Promise<AuthStatus> {
   }
 }
 
-/**
- * Checks the token against GitLab before storing anything, so a typo or a token
- * without `api` is reported here instead of on the first reply.
- */
 export async function connect(deps: AuthDeps, input: { host: string; token: string }): Promise<AuthStatus> {
   const host = normalizeHost(input.host);
   const token = input.token.trim();

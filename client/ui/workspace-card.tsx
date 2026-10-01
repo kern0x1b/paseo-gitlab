@@ -14,11 +14,6 @@ export function workspaceKey(directory: string) {
   return ["gitlab", "workspace", directory] as const;
 }
 
-/**
- * The MR of the branch this workspace is on, above the lists: its pipeline, what
- * is still unresolved, and a way to hand it to an agent. Nothing is shown for a
- * workspace that is not a checkout of a project on the connected GitLab.
- */
 export function WorkspaceCard({
   onOpen,
   onCreateMergeRequest,
