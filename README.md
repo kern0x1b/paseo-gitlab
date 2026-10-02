@@ -293,6 +293,7 @@ src/gitlab-client.js lightweight REST/GraphQL client reading token from OS keych
 gitlab whoami
 gitlab todos
 gitlab mr 101
+gitlab snapshot                       # Everything waiting on you as paseo-fleet/v1 JSON (for `fleet sweep`)
 
 # AI Fleet Coordinator Binding
 gitlab set-coordinator <agent-id>     # Bind active Paseo coordinator agent ID

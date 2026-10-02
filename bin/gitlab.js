@@ -5,6 +5,7 @@ import { SubscriptionRegistry } from "../src/subscriptions.js";
 import { EventDispatcher } from "../src/dispatcher.js";
 import { GitLabDaemon } from "../src/daemon.js";
 import { McpServer } from "../src/mcp.js";
+import { GitLabSnapshot } from "../src/snapshot.js";
 import { loadConfig, saveConfig, getConfigPath } from "../src/config.js";
 import path from "node:path";
 import os from "node:os";
@@ -60,6 +61,8 @@ COMMANDS:
                                    Options: --project <id>
   pipelines                        View recent CI/CD pipelines
                                    Options: --project <id> --scope <branches|finished> --limit <n>
+  snapshot                         Print everything currently waiting on you as paseo-fleet/v1 JSON
+                                   (pending to-dos, open MRs you author/review/are assigned, assigned issues)
 
   subscribe                        Subscribe a Paseo agent to receive real-time push events
                                    Options: --agent <id> [--mr <iid>] [--issue <iid>] [--type <type>] [--project <id>]
@@ -292,6 +295,12 @@ async function main() {
             console.log(`- [#${p.id}] status: ${p.status.padEnd(8)} ref: ${p.ref} (${p.web_url})`);
           }
         }
+        break;
+      }
+
+      case "snapshot": {
+        const snapshot = await new GitLabSnapshot({ client }).collect();
+        console.log(JSON.stringify(snapshot, null, 2));
         break;
       }
 

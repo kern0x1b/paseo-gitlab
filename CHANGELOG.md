@@ -5,6 +5,12 @@ All notable changes to this plugin are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `gitlab snapshot`: pending to-dos, open merge requests you author, review or are assigned to (with pipeline, merge status and approvals), and assigned issues as one `paseo-fleet/v1` document for `fleet sweep`.
+
 ## [1.1.0] - 2026-10-02
 
 ### Added
